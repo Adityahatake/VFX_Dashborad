@@ -1,0 +1,105 @@
+schema_version: 1
+name: vfx_genai
+title: "VFX / production companies using GenAI in client work"
+
+icp:
+  description: >-
+    Real production businesses (film, VFX, animation, advertising, virtual production, dubbing, creative/ad studios)
+    with named clients that use generative AI in their OWN client work, shown on a page we opened
+    (company site = Tier A, reputable trade press = Tier B).
+  reject_company_types:
+    - agency network or brand group
+    - broadcaster
+    - marketing / SEO / PR / web / branding agency
+    - AI tool or SaaS vendor
+    - publisher, educator, research body, investor, marketplace
+  reject_names: [Dentsu, Havas, Publicis, WPP, Omnicom, ITV, BBC, Disney, Netflix]
+
+countries:
+  approved: [US, Canada, UK, Ireland, Australia, New Zealand, France, Germany, Netherlands, Belgium, Switzerland, Austria,
+             Italy, Spain, Portugal, Sweden, Norway, Denmark, Finland, UAE, Singapore, Japan, South Korea, Israel,
+             Hong Kong, Poland, Czech Republic, South Africa, Malaysia, Argentina, Brazil, Mexico]
+  excluded: [India]          # manager's decision: company, team AND person; overrides SOP 01 s6.2
+  excluded_patterns: ['\bindia\b', 'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderabad', 'chennai', 'pune', 'kolkata', 'gurgaon', 'noida', '\.in$']
+
+evidence:
+  strong_terms: [Midjourney, Runway, Sora, Veo, Kling, Seedance, Nano Banana, ComfyUI, Stable Diffusion, Higgsfield, Firefly,
+                 "generative AI", "AI-generated", "genAI", "KI-generiert", "generative KI", "IA generativa", "IA générative",
+                 "généré par IA", "generado con IA", "gerado por IA", "made with AI", "hybrid AI", "AI commercial", "AI film"]
+  client_cues: [client, Kunde, klant, cliente, campaign, Kampagne, campaña, campanha, campagne, commercial, spot, TVC,
+                "brand film", "for {Brand}", agency, "case study", project, "on air", launched]
+  false_positive_patterns: ['runway (show|model|fashion|walk)', 'firefly (logo|lane)', 'regenerative', 'generative (art|design|engine optimization)', 'GEO\b', 'Klinger', 'klingt']
+  reject_if: ["service line only", "self-initiated / spec work", "film about an AI product (AI vendor as client)",
+              "AI for moodboard or exploration only", "training exercise", "one experimental piece (SOP 01 s12.4)"]
+
+people:
+  decision_titles: [Founder, Co-Founder, Owner, CEO, Managing Director, Geschäftsführer, President, Creative Director,
+                    Chief Creative Officer, Head of Production, Executive Producer, Head of AI, AI Director,
+                    Head of Innovation, CTO, Partner]
+  reject_titles: [intern, assistant, coordinator, student, trainee, junior, recruit, talent, HR, sales, business development,
+                  account, finance, legal, marketing, engineer, developer, designer, editor, artist, animator, accountant, former]
+  max_per_company: 3         # manager's decision
+  role_families:
+    ceo: [founder, owner, ceo, managing director, geschäftsführer, president, partner]
+    creative: [creative director, chief creative officer]
+    production: [executive producer, head of production]
+    tech: [cto, head of ai, ai director, head of innovation]
+  database_title_confidence: Medium   # manager's decision
+
+steps:
+  - {step: harvest_revenuebase, stage: companies, params: {skip_prefixes: [generative-ai-, ai-], cities: false}}
+  - {step: harvest_directory,   stage: companies, params: {urls: []}}
+  - {step: harvest_tavily_press, stage: companies, params: {time_range: month}}
+  - {step: deep_crawl,          stage: companies, params: {threads: 40, max_inner_pages: 6}}
+  - {step: verify_companies,    stage: review}
+  - {step: evidence,            stage: people}
+  - {step: leads_finder,        stage: people, params: {max_result: 50, price_per_result: 0.003}}
+  - {step: pool_match,          stage: people}
+  - {step: salesnav,            stage: people, params: {limit: 40, search_price: 0.50, result_price: 0.01}}
+  - {step: verify_people,       stage: review}
+  - {step: build_rows,          stage: review}
+  - {step: append_sheet,        stage: write}
+
+output:
+  sheet_id_env: GOOGLE_SHEET_ID
+  tabs:
+    - name: Linkedin
+      range: "Linkedin!A1:Q6000"
+      write: true
+      header: &cols [name, company, title, role, country, primary_classification, ai_adoption_stage, ai_evidence,
+                     primary_commercial_problem, why_this_person, qualification_decision, qa_decision, qa_confidence,
+                     outreach_readiness, contact_or_reference, contact_or_reference_type, evidence_source]
+    - {name: X, range: "X!A1:AD6000", write: false, header: []}              # dedupe only; header read live (30 cols)
+    - {name: Stage 32, range: "'Stage 32'!A1:AC3000", write: false, header: []}   # dedupe only (29 cols)
+  columns: *cols
+  dedupe:
+    name_field: name
+    company_field: company
+    url_fields: [contact_or_reference]
+    evidence_field: evidence_source
+    country_field: country
+    folded_name: true
+  colour_own_rows: {background: white, text: black}
+
+budget:
+  default_cycle_cap_usd: 3.0
+  hard_max_cycle_cap_usd: 3.0
+  min_key_balance_usd: 0.80
+  stop_rules: {max_cost_per_row: 0.50, min_pass_rate: 0.03, min_usable_credit: 3.0, low_yield_cycles: 2, low_yield_rows: 5}
+
+llm:
+  enabled: false
+  provider: none
+  model: ""
+  cycle_cap_usd: 1.00
+
+sop_files: [sop/SOP_01.md, sop/SOP_02.md, sop/SOP_03.md, sop/manager_overrides.md]
+
+exhausted_sources:
+  - {source: "RevenueBase categories (25)", note: "Mined out: about 21,000 companies crawled.", date: "2026-10-28"}
+  - {source: "Agency categories (creative-agencies-for-video, advertising-agencies-with-*)", note: "0 qualifiers from 4,508 sites.", date: "2026-10-28"}
+  - {source: "generative-ai-* / ai-* RevenueBase categories", note: "Mostly tool vendors.", date: "2026-10-28"}
+  - {source: "LinkedIn post search (past month)", note: "0 qualifiers from 42 posts; later runs at or above the $0.50-per-row stop line.", date: "2026-10-28"}
+  - {source: "Sales Navigator gap fill", note: "About $0.90 per row; do not repeat unless free supply is gone.", date: "2026-10-29"}
+  - {source: "Award sites, Cresta, sheet-evidence mining, AI listicles, StudioList/StudioIndex", note: "Cycles 29-34: nothing new.", date: "2026-10-29"}
+  - {source: "Trade press, last 12 months", note: "Only ArtClass and Overture Studios. Rerun monthly with time_range=month only.", date: "2026-10-29"}

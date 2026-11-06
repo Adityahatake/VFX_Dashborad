@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lead-pipeline-dashboard"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["streamlit", "pydantic>=2", "PyYAML", "cryptography"]
+
+[tool.setuptools]
+packages = ["core"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

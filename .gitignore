@@ -1,0 +1,25 @@
+# Allowlist style: ignore everything, then re-include only source we want in git.
+*
+!.gitignore
+!.env.example
+!README.md
+!CLAUDE.md
+!requirements.txt
+!pyproject.toml
+!*/
+!app/**/*.py
+!core/**/*.py
+!scripts/**/*.py
+!tests/**/*.py
+!pipelines/*/pipeline.yaml
+!pipelines/*/sop/**/*.md
+!pipelines/*/steps/*.py
+# Never, even if matched above
+.env
+.venv/
+data/
+*.sqlite*
+__pycache__/
+*.pyc
+*.csv
+service-account*.json

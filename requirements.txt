@@ -1,0 +1,6 @@
+streamlit
+pydantic>=2
+PyYAML
+cryptography
+pytest
+# optional extras: anthropic
