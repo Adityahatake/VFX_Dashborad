@@ -23,11 +23,15 @@ countries:
   excluded_patterns: ['\bindia\b', 'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderabad', 'chennai', 'pune', 'kolkata', 'gurgaon', 'noida', '\.in$']
 
 evidence:
-  strong_terms: [Midjourney, Runway, Sora, Veo, Kling, Seedance, Nano Banana, ComfyUI, Stable Diffusion, Higgsfield, Firefly,
-                 "generative AI", "AI-generated", "genAI", "KI-generiert", "generative KI", "IA generativa", "IA générative",
-                 "généré par IA", "generado con IA", "gerado por IA", "made with AI", "hybrid AI", "AI commercial", "AI film"]
-  client_cues: [client, Kunde, klant, cliente, campaign, Kampagne, campaña, campanha, campagne, commercial, spot, TVC,
-                "brand film", "for {Brand}", agency, "case study", project, "on air", launched]
+  strong_terms: [Midjourney, Runway, Sora, Veo, Kling, Seedance, "Nano Banana", ComfyUI, "Stable Diffusion", Higgsfield, Firefly,
+                 "AI-generated", "generative AI", "gen AI", "genAI", "KI-generiert*", "generativ* KI", "IA generativa", "IA générative",
+                 "généré par IA", "généré par l'IA", "generado con IA", "generada con IA", "gerado por IA", "gerada por IA",
+                 "AI hybrid", "AI film", "AI spot", "AI commercial", "AI campaign", "AI animation", "hybrid AI", "fully AI", "100% AI",
+                 "made with AI", "KI-Film", "KI-Spot", "KI-Kampagne", "KI-Video"]
+  client_cues: [client, Kunde, klant, cliente, campaign, Kampagne, campaña, campanha, campagne, commercial, comercial, comerciais,
+                commerciale, spot, TVC,
+                "brand film", "for {Brand}", "für {Brand}", "para {Brand}", "pour {Brand}", agency, Agentur, agencia,
+                "case study", project, Projekt, proyecto, "on air", launched]
   false_positive_patterns: ['runway (show|model|fashion|walk)', 'firefly (logo|lane)', 'regenerative', 'generative (art|design|engine optimization)', 'GEO\b', 'Klinger', 'klingt']
   reject_if: ["service line only", "self-initiated / spec work", "film about an AI product (AI vendor as client)",
               "AI for moodboard or exploration only", "training exercise", "one experimental piece (SOP 01 s12.4)"]

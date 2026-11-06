@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import paths
@@ -16,6 +16,23 @@ class Loaded:
     config: PipelineConfig | None
     problems: list[str]
     missing_sop: list[str]
+    step_problems: list[str] = field(default_factory=list)     # steps the YAML names that are unavailable or have bad params
+    step_unavailable: list[str] = field(default_factory=list)
+
+
+def check_steps(cfg: PipelineConfig) -> tuple[list[str], list[str]]:
+    """(problems, not-yet-available step ids). A step id with no implementation yet is a warning; bad params for a real step are a problem."""
+    from .steps import all_steps
+    reg, problems, missing = all_steps(), [], []
+    for s in cfg.steps:
+        if s.step not in reg:
+            missing.append(s.step)
+            continue
+        try:
+            reg[s.step].params_model(**s.params)
+        except Exception as e:                                  # pydantic ValidationError
+            problems.append(f"step '{s.step}': " + "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in getattr(e, "errors", lambda: [{"loc": [], "msg": str(e)}])()))
+    return problems, missing
 
 
 def load_all() -> list[Loaded]:
@@ -23,10 +40,18 @@ def load_all() -> list[Loaded]:
     for d in paths.pipeline_dirs():
         try:
             cfg = load_config(d / "pipeline.yaml")
-            out.append(Loaded(d, cfg, [], [f for f in cfg.sop_files if not (d / f).exists()]))
+            sp, miss = check_steps(cfg)
+            out.append(Loaded(d, cfg, [], [f for f in cfg.sop_files if not (d / f).exists()], sp, miss))
         except ConfigError as e:
             out.append(Loaded(d, None, e.problems, []))
     return out
+
+
+def get_config(name: str) -> PipelineConfig | None:
+    for p in load_all():
+        if p.config and p.config.name == name:
+            return p.config
+    return None
 
 
 def sync_db(con: sqlite3.Connection, loaded: list[Loaded]) -> None:

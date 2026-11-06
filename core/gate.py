@@ -107,4 +107,5 @@ def confirm_and_start(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: in
         raise Blocked(g.blockers)
     if abs(g.estimate.max_usd - confirmed_max_usd) > 1e-9 or g.key_id != confirmed_key_id:
         raise Blocked([f"the cost or key changed since you confirmed (now ${g.estimate.max_usd:.3f} on {g.key_id}); review and confirm again"])
-    return jobs.start_job(con, step_id, params, cycle_id, confirmed=True, key_id=g.key_id, est_max_usd=g.estimate.max_usd if g.kind != "llm" else 0.0)
+    return jobs.start_job(con, step_id, params, cycle_id, confirmed=True, key_id=g.key_id, est_max_usd=g.estimate.max_usd if g.kind != "llm" else 0.0,
+                          pipeline=cfg.name)

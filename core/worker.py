@@ -8,7 +8,7 @@ import traceback
 
 from contextlib import contextmanager
 
-from . import jobs, keys as keymod, paths, spend
+from . import jobs, keys as keymod, paths, registry, spend
 from .db import open_db
 from .logmask import mask
 from .steps import get_step
@@ -65,7 +65,9 @@ def main(argv: list[str] | None = None) -> int:
 
         ctx = StepContext(job_id=jid, cycle_id=job["cycle_id"], workdir=jobs.workdir_for(job["cycle_id"], jid), job_dir=jobs.job_dir(jid),
                           log=lambda m: jobs.log_line(jid, m), is_cancelled=lambda: jobs.cancel_flag_set(jid),
-                          lease=lambda prefix: jobs.lease(con, prefix, jid), use_key=use_key, record_spend=record_spend)
+                          lease=lambda prefix: jobs.lease(con, prefix, jid), use_key=use_key, record_spend=record_spend,
+                          cfg=registry.get_config(job["pipeline"]) if job["pipeline"] else None, db=con,
+                          pipeline_dir=(paths.DATA_DIR / job["pipeline"]) if job["pipeline"] else None)
         result = (step.resume if a.resume else step.run)(ctx, params)
         jobs.log_line(jid, f"finished: {result.message or result.status} {result.counts or ''}".strip())
         if result.status == "partial":

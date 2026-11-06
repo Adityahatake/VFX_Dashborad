@@ -20,7 +20,9 @@ for p in loaded:
                 st.write(f"- {line}")
             continue
         cfg = p.config
-        st.write(f"**Steps:** {' > '.join(s.step for s in cfg.steps)}")
+        st.write("**Steps:** " + " > ".join(s.step + ("" if s.step not in p.step_unavailable else " (not built yet)") for s in cfg.steps))
+        for line in p.step_problems:
+            st.error(line)
         st.write(f"**Write tab:** {cfg.output.write_tab.name} ({len(cfg.output.columns)} columns); dedupes against {', '.join(t.name for t in cfg.output.tabs)}")
         b = cfg.budget
         st.write(f"**Budget:** cap ${b.default_cycle_cap_usd:.2f} (hard max ${b.hard_max_cycle_cap_usd:.2f}), key floor ${b.min_key_balance_usd:.2f}")

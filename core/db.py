@@ -65,6 +65,11 @@ MIGRATIONS: list[tuple[int, str]] = [
     ALTER TABLE jobs ADD COLUMN kind TEXT;
     CREATE UNIQUE INDEX idx_stop_once ON stop_events(cycle_id, rule);
     """),
+    (4, """
+    ALTER TABLE jobs ADD COLUMN pipeline TEXT;
+    CREATE TABLE known_names (
+        name TEXT NOT NULL, pipeline TEXT NOT NULL, source TEXT, first_seen TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (name, pipeline));
+    """),
 ]
 
 

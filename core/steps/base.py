@@ -46,8 +46,13 @@ class StepContext:
 
     def __init__(self, *, job_id: int, cycle_id: int | None, workdir: Path, job_dir: Path, log: Callable[[str], None],
                  is_cancelled: Callable[[], bool], lease: Callable[[str], Any], sheet=None, llm=None,
-                 use_key: Callable[[str], Any] | None = None, record_spend: Callable[..., None] | None = None):
+                 use_key: Callable[[str], Any] | None = None, record_spend: Callable[..., None] | None = None,
+                 cfg=None, db=None, pipeline_dir: Path | None = None):
         self.job_id, self.cycle_id = job_id, cycle_id
+        self.cfg, self.db = cfg, db                   # PipelineConfig (or None for ad-hoc jobs) and this job's own SQLite connection
+        self.pipeline_dir = pipeline_dir              # data/<pipeline>/: files shared by all cycles of a pipeline (pools, caches)
+        if pipeline_dir:
+            pipeline_dir.mkdir(parents=True, exist_ok=True)
         self.workdir, self.job_dir = workdir, job_dir
         self._log, self._is_cancelled, self._lease = log, is_cancelled, lease
         self._use_key, self._record_spend = use_key, record_spend

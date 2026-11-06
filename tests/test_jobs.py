@@ -1,6 +1,7 @@
 """Jobs engine tests. These launch REAL detached worker processes running the free demo step (no network, no cost)."""
 import os
 import sqlite3
+import sys
 import time
 
 import pytest
@@ -37,6 +38,29 @@ def test_pid_alive_current_and_dead():
     assert jobs.pid_alive(os.getpid())
     assert not jobs.pid_alive(None)
     assert not jobs.pid_alive(2**22 + 12345)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="venv launcher layering is Windows-specific")
+def test_worker_runs_without_the_venv_launcher_layer(env):
+    """The tracked pid must be the real worker's pid (no launcher process in between), and the worker must still import its dependencies."""
+    import re
+    jid = jobs.start_job(env, "demo_slow", {"duration_s": 20, "tick_s": 0.5})
+    wait_for(env, jid, ("running",))
+    real = int(re.search(r"pid (\d+)", jobs.tail_log(jid)).group(1))
+    j = jobs.get_job(env, jid)
+    assert j["pid"] == real and j["status"] == "running"
+    py, extra = jobs.worker_python()
+    if os.path.normcase(py) != os.path.normcase(sys.executable):          # running inside a venv
+        assert "PYTHONPATH" in extra and not py.lower().endswith(os.path.join(".venv", "Scripts", "python.exe"))
+    jobs.request_cancel(env, jid)
+    wait_for(env, jid, ("cancelled",))
+
+
+def test_launch_never_overwrites_a_running_workers_pid_or_status(env):
+    jid = env.execute("INSERT INTO jobs (step_id, status, pid) VALUES ('demo_slow','running', 4242)").lastrowid
+    env.execute("UPDATE jobs SET pid=? WHERE id=? AND pid IS NULL AND status='queued'", (9999, jid))      # the guarded update launch() uses
+    j = jobs.get_job(env, jid)
+    assert (j["pid"], j["status"]) == (4242, "running")
 
 
 def test_run_to_completion(env):

@@ -75,7 +75,7 @@ g = gate.evaluate(con, cfg, cid, sid, params)
 if step.kind == "free":
     if st.button("Run (free)"):
         from core import jobs
-        jid = jobs.start_job(con, sid, params, cid)
+        jid = jobs.start_job(con, sid, params, cid, pipeline=name)
         st.success(f"Started job {jid}. Watch it on the Jobs page.")
 else:
     st.markdown(f"#### Before this {step.kind} step runs")
