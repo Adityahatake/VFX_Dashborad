@@ -45,10 +45,12 @@ class StepContext:
     """What a step sees. Built by the worker; tests build one directly."""
 
     def __init__(self, *, job_id: int, cycle_id: int | None, workdir: Path, job_dir: Path, log: Callable[[str], None],
-                 is_cancelled: Callable[[], bool], lease: Callable[[str], Any], sheet=None, llm=None):
+                 is_cancelled: Callable[[], bool], lease: Callable[[str], Any], sheet=None, llm=None,
+                 use_key: Callable[[str], Any] | None = None, record_spend: Callable[..., None] | None = None):
         self.job_id, self.cycle_id = job_id, cycle_id
         self.workdir, self.job_dir = workdir, job_dir
         self._log, self._is_cancelled, self._lease = log, is_cancelled, lease
+        self._use_key, self._record_spend = use_key, record_spend
         self.sheet, self.llm = sheet, llm      # filled in by later phases (None until then)
         self.workdir.mkdir(parents=True, exist_ok=True)
 
@@ -62,6 +64,19 @@ class StepContext:
     def lease_key(self, key_prefix: str):
         """`with ctx.lease_key("apify_ZoxD") as k:`: one job per key at a time; raises LeaseBusy if another live job holds it."""
         return self._lease(key_prefix)
+
+    def use_key(self, provider: str):
+        """`with ctx.use_key("apify") as key:` -> (key_id, secret). Uses the key the user confirmed at the gate, under a lease (one job per key)."""
+        if self._use_key is None:
+            raise RuntimeError("this context has no key access")
+        return self._use_key(provider)
+
+    def record_spend(self, *, source: str, est_max_usd: float, actual_usd: float, results: int = 0, key_id: str | None = None, note: str = "",
+                     kind: str = "apify") -> None:
+        """One ledger entry per paid call. Call it as soon as the cost is known, before any further waiting."""
+        if self._record_spend is None:
+            raise RuntimeError("this context cannot record spend")
+        self._record_spend(source=source, est_max_usd=est_max_usd, actual_usd=actual_usd, results=results, key_id=key_id, note=note, kind=kind)
 
     # -- checkpoint: a small JSON file next to the job log; resume() reads it back
     @property

@@ -1,6 +1,9 @@
+import json
+
 import streamlit as st
 
-from core import jobs, paths
+from core import gate, jobs, paths
+from core.registry import load_all
 from core.db import open_db
 from core.steps import all_steps
 from core.steps.base import broken_steps
@@ -55,7 +58,22 @@ def live():
             jobs.request_cancel(con, sel)
         if jobs.is_stuck(j) and b3.button("Mark interrupted", key=f"m{sel}", help="No heartbeat: stop the process and make the job resumable."):
             jobs.mark_interrupted(con, sel)
-    if j["status"] in jobs.RESUMABLE and b2.button("Resume", key=f"r{sel}", help="Continue from the checkpoint."):
+    if j["status"] in jobs.RESUMABLE and j["kind"] in ("paid", "llm", "write"):
+        # paid jobs go back through the cap / key / stop-rule gate before they may continue
+        pipe = next((p.config for p in load_all() if p.config and p.config.name == (con.execute("SELECT pipeline FROM cycles WHERE id=?", (j["cycle_id"],)).fetchone() or [None])[0]), None)
+        if pipe is None:
+            st.warning("This paid job's cycle or pipeline is not available, so it cannot be resumed.")
+        else:
+            g = gate.evaluate(con, pipe, j["cycle_id"], j["step_id"], json.loads(j["params_json"] or "{}"))
+            st.info(f"Resuming a {j['kind']} step: max ${g.estimate.max_usd:.3f} on {g.key_id or 'no key'}…, cycle cap remaining ${g.remaining:.3f}")
+            for bl in g.blockers:
+                st.error("Blocked: " + bl)
+            if b2.button("Resume (re-checked)", key=f"r{sel}", disabled=not g.ok):
+                try:
+                    gate.confirm_and_resume(con, pipe, sel, g.estimate.max_usd, g.key_id)
+                except gate.Blocked as e:
+                    st.error("; ".join(e.blockers))
+    elif j["status"] in jobs.RESUMABLE and b2.button("Resume", key=f"r{sel}", help="Continue from the checkpoint."):
         jobs.resume_job(con, sel)
     if j["cancel_requested"] and j["status"] in jobs.LIVE:
         st.caption("Cancel requested; waiting for the step to stop (killed after the grace period).")

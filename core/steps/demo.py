@@ -5,7 +5,7 @@ import time
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .base import Step, StepContext, StepResult, register
+from .base import CostEstimate, Step, StepContext, StepResult, register
 
 
 class DemoParams(BaseModel):
@@ -14,6 +14,39 @@ class DemoParams(BaseModel):
     tick_s: float = Field(2.0, gt=0, le=60)
     lease_key: str | None = None      # e.g. "demo_key" to test one-job-per-key
     fail_at: int | None = None        # tick number at which to raise, to test failure handling
+
+
+class DemoPaidParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    max_result: int = Field(25, ge=1, le=100_000)
+    price_per_result: float = Field(0.003, gt=0)
+    actual_results: int | None = None     # what the fake run "returns" (default: 80% of max_result)
+    seconds: float = Field(6.0, gt=0, le=120)
+
+
+@register
+class DemoPaid(Step):
+    """Mock of a paid Apify run: estimate = price x max_result, takes a key under a lease, records spend. No network, no real cost."""
+    id = "demo_paid"
+    kind = "paid"
+    title = "Demo: mocked paid step"
+    params_model = DemoPaidParams
+
+    def estimate_cost(self, ctx, params: DemoPaidParams) -> CostEstimate:
+        return CostEstimate(max_usd=round(params.max_result * params.price_per_result, 6), provider="apify", key_required=True,
+                            note=f"{params.max_result} results x ${params.price_per_result}")
+
+    def run(self, ctx: StepContext, params: DemoPaidParams) -> StepResult:
+        est = self.estimate_cost(ctx, params).max_usd
+        with ctx.use_key("apify") as (kid, _secret):
+            ctx.log(f"mock paid run on key {kid}: max ${est:.3f}")
+            for i in range(int(params.seconds)):
+                ctx.check_cancel()
+                time.sleep(1)
+            n = params.actual_results if params.actual_results is not None else int(params.max_result * 0.8)
+            cost = round(n * params.price_per_result, 6)
+            ctx.record_spend(source="demo_actor", est_max_usd=est, actual_usd=cost, results=n, key_id=kid, note="mock")
+        return StepResult(counts={"results": n}, actual_cost=cost, message=f"{n} results for ${cost:.3f} (mock)")
 
 
 @register

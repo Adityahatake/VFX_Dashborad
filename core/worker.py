@@ -6,7 +6,9 @@ import os
 import threading
 import traceback
 
-from . import jobs, paths
+from contextlib import contextmanager
+
+from . import jobs, keys as keymod, paths, spend
 from .db import open_db
 from .logmask import mask
 from .steps import get_step
@@ -46,9 +48,24 @@ def main(argv: list[str] | None = None) -> int:
     try:
         step = get_step(job["step_id"])
         params = step.params_model(**__import__("json").loads(job["params_json"] or "{}"))
+        demo = keymod.is_demo(con)
+
+        @contextmanager
+        def use_key(provider: str):
+            kid = job["key_id"]
+            if not kid:
+                raise RuntimeError(f"step '{job['step_id']}' needs a {provider} key but none was confirmed at the gate")
+            with jobs.lease(con, kid, jid):
+                yield kid, keymod.secret_for(provider, kid, demo)
+
+        def record_spend(*, source, est_max_usd, actual_usd, results, key_id, note, kind):
+            spend.record(con, cycle_id=job["cycle_id"], step_id=job["step_id"], source=source, kind=kind, key_prefix=key_id,
+                         est_max_usd=est_max_usd, actual_usd=actual_usd, results=results, note=note)
+            jobs.log_line(jid, f"spend: ${actual_usd:.3f} (max ${est_max_usd:.3f}) on {source}, {results} results")
+
         ctx = StepContext(job_id=jid, cycle_id=job["cycle_id"], workdir=jobs.workdir_for(job["cycle_id"], jid), job_dir=jobs.job_dir(jid),
                           log=lambda m: jobs.log_line(jid, m), is_cancelled=lambda: jobs.cancel_flag_set(jid),
-                          lease=lambda prefix: jobs.lease(con, prefix, jid))
+                          lease=lambda prefix: jobs.lease(con, prefix, jid), use_key=use_key, record_spend=record_spend)
         result = (step.resume if a.resume else step.run)(ctx, params)
         jobs.log_line(jid, f"finished: {result.message or result.status} {result.counts or ''}".strip())
         if result.status == "partial":

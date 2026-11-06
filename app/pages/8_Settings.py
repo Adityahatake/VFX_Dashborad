@@ -30,6 +30,14 @@ for name in ["GOOGLE_SHEET_ID", "SANDBOX_SHEET_ID", "GOOGLE_APPLICATION_CREDENTI
     rows.append({"variable": name, "status": shown})
 st.table(rows)
 
+st.subheader("Demo mode")
+st.caption("Swaps in three fake Apify keys with fake balances and makes no network calls, so the paid-step gate and spend tracking can be shown safely.")
+demo_on = st.toggle("Demo mode (fake keys, no network)", value=get_setting(con, "demo_mode", "0") == "1")
+if demo_on != (get_setting(con, "demo_mode", "0") == "1"):
+    set_setting(con, "demo_mode", "1" if demo_on else "0")
+    con.execute("DELETE FROM key_status")          # never mix fake and real balances
+    st.rerun()
+
 st.subheader("LLM assist")
 st.caption("Optional. Manual mode works with the toggle off or no key. The LLM only pre-fills; every item still needs your click on Review.")
 on = st.toggle("Enable LLM assist", value=get_setting(con, "llm.enabled", "0") == "1", disabled=not os.environ.get("ANTHROPIC_API_KEY"))

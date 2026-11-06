@@ -29,7 +29,8 @@ def wait_for(con, jid, statuses, timeout=40):
         if s in statuses:
             return s
         time.sleep(0.3)
-    raise AssertionError(f"job {jid} stuck in {jobs.get_job(con, jid)['status']}; log:\n{jobs.tail_log(jid)}")
+    j = jobs.get_job(con, jid)
+    raise AssertionError(f"job {jid} stuck in {j['status']} (pid {j['pid']} alive={jobs.pid_alive(j['pid'])}); log:\n{jobs.tail_log(jid)}")
 
 
 def test_pid_alive_current_and_dead():

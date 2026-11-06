@@ -59,6 +59,12 @@ MIGRATIONS: list[tuple[int, str]] = [
     ALTER TABLE jobs ADD COLUMN cancel_requested_at TEXT;
     ALTER TABLE jobs ADD COLUMN resumed_count INTEGER NOT NULL DEFAULT 0;
     """),
+    (3, """
+    ALTER TABLE jobs ADD COLUMN key_id TEXT;
+    ALTER TABLE jobs ADD COLUMN est_max_usd REAL NOT NULL DEFAULT 0;
+    ALTER TABLE jobs ADD COLUMN kind TEXT;
+    CREATE UNIQUE INDEX idx_stop_once ON stop_events(cycle_id, rule);
+    """),
 ]
 
 

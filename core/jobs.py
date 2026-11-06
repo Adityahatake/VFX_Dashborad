@@ -105,13 +105,14 @@ def tail_log(job_id: int, lines: int = 200) -> str:
 
 
 # ---------------------------------------------------------------- create / launch
-def create_job(con: sqlite3.Connection, step_id: str, params: dict | None = None, cycle_id: int | None = None, confirmed: bool = False) -> int:
+def create_job(con: sqlite3.Connection, step_id: str, params: dict | None = None, cycle_id: int | None = None, confirmed: bool = False,
+               key_id: str | None = None, est_max_usd: float = 0.0) -> int:
     step = get_step(step_id)                                   # KeyError for unknown steps
     p = step.params_model(**(params or {}))                    # ValidationError for bad params, before anything is created
     if step.kind in ("paid", "llm", "write") and not confirmed:
-        raise PermissionError(f"step '{step_id}' is {step.kind}: it needs an explicit confirmation")
-    cur = con.execute("INSERT INTO jobs (step_id, params_json, cycle_id, status) VALUES (?,?,?, 'queued')",
-                      (step_id, json.dumps(p.model_dump()), cycle_id))
+        raise PermissionError(f"step '{step_id}' is {step.kind}: it needs an explicit confirmation (core.gate.confirm_and_start)")
+    cur = con.execute("INSERT INTO jobs (step_id, params_json, cycle_id, status, key_id, est_max_usd, kind) VALUES (?,?,?, 'queued', ?, ?, ?)",
+                      (step_id, json.dumps(p.model_dump()), cycle_id, key_id, est_max_usd, step.kind))
     return cur.lastrowid
 
 
@@ -119,7 +120,7 @@ def launch(con: sqlite3.Connection, job_id: int, resume: bool = False) -> int:
     """Start core.worker as a detached process (survives the browser and Streamlit). Returns the PID."""
     jd = job_dir(job_id)
     args = [sys.executable, "-m", "core.worker", "--job", str(job_id)] + (["--resume"] if resume else [])
-    kw: dict = dict(cwd=str(paths.ROOT), stdin=subprocess.DEVNULL, close_fds=True, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    kw: dict = dict(cwd=str(paths.ROOT), stdin=subprocess.DEVNULL, close_fds=True, env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONFAULTHANDLER": "1"})   # a hard crash then leaves a traceback in worker.out
     out_path = jd / "worker.out"                               # crashes before logging starts land here
     if os.name == "nt":
         # Windows: a short-lived intermediary starts the worker and exits, so the worker is not a child of Streamlit. Otherwise a tool or
@@ -140,8 +141,9 @@ def launch(con: sqlite3.Connection, job_id: int, resume: bool = False) -> int:
     return pid
 
 
-def start_job(con: sqlite3.Connection, step_id: str, params: dict | None = None, cycle_id: int | None = None, confirmed: bool = False) -> int:
-    jid = create_job(con, step_id, params, cycle_id, confirmed)
+def start_job(con: sqlite3.Connection, step_id: str, params: dict | None = None, cycle_id: int | None = None, confirmed: bool = False,
+              key_id: str | None = None, est_max_usd: float = 0.0) -> int:
+    jid = create_job(con, step_id, params, cycle_id, confirmed, key_id, est_max_usd)
     launch(con, jid)
     return jid
 
@@ -201,10 +203,12 @@ def mark_interrupted(con: sqlite3.Connection, job_id: int) -> None:
     _finish(con, job_id, "interrupted", "stopped by the user (no heartbeat)")
 
 
-def resume_job(con: sqlite3.Connection, job_id: int) -> int:
+def resume_job(con: sqlite3.Connection, job_id: int, confirmed: bool = False) -> int:
     j = get_job(con, job_id)
     if j is None or j["status"] not in RESUMABLE:
         raise ValueError(f"job {job_id} cannot be resumed (status {j['status'] if j else 'missing'})")
+    if j["kind"] in ("paid", "llm", "write") and not confirmed:
+        raise PermissionError(f"job {job_id} is a {j['kind']} step: resume it through core.gate.confirm_and_resume so the cap and key checks run again")
     (job_dir(job_id) / "cancel.flag").unlink(missing_ok=True)
     con.execute("UPDATE jobs SET cancel_requested=0, cancel_requested_at=NULL, error=NULL, finished_at=NULL, resumed_count=resumed_count+1 WHERE id=?", (job_id,))
     return launch(con, job_id, resume=True)
