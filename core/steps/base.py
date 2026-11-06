@@ -47,7 +47,7 @@ class StepContext:
     def __init__(self, *, job_id: int, cycle_id: int | None, workdir: Path, job_dir: Path, log: Callable[[str], None],
                  is_cancelled: Callable[[], bool], lease: Callable[[str], Any], sheet=None, llm=None,
                  use_key: Callable[[str], Any] | None = None, record_spend: Callable[..., None] | None = None,
-                 cfg=None, db=None, pipeline_dir: Path | None = None):
+                 cfg=None, db=None, pipeline_dir: Path | None = None, sheet_factory: Callable[[], Any] | None = None):
         self.job_id, self.cycle_id = job_id, cycle_id
         self.cfg, self.db = cfg, db                   # PipelineConfig (or None for ad-hoc jobs) and this job's own SQLite connection
         self.pipeline_dir = pipeline_dir              # data/<pipeline>/: files shared by all cycles of a pipeline (pools, caches)
@@ -56,8 +56,17 @@ class StepContext:
         self.workdir, self.job_dir = workdir, job_dir
         self._log, self._is_cancelled, self._lease = log, is_cancelled, lease
         self._use_key, self._record_spend = use_key, record_spend
-        self.sheet, self.llm = sheet, llm      # filled in by later phases (None until then)
+        self._sheet, self._sheet_factory, self.llm = sheet, sheet_factory, llm
         self.workdir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def sheet(self):
+        """The sheet client (a SafeSheet), created on first use so steps that never touch the sheet never need credentials."""
+        if self._sheet is None:
+            if self._sheet_factory is None:
+                raise RuntimeError("this context has no sheet client")
+            self._sheet = self._sheet_factory()
+        return self._sheet
 
     def log(self, msg: str) -> None:
         self._log(msg)

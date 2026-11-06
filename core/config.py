@@ -68,6 +68,8 @@ class Dedupe(Strict):
     evidence_field: str = "evidence_source"
     country_field: str = "country"
     folded_name: bool = True
+    profile_url_markers: list[str] = ["linkedin.com/in/"]   # the first url field must contain one of these (a personal profile, not a company page)
+    batch_size: int = Field(8, ge=1, le=10)                  # rows per append; the tabs are re-read before every batch
 
 
 class Colour(Strict):

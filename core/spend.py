@@ -110,4 +110,12 @@ def open_stop_events(con, cycle_id: int) -> list[sqlite3.Row]:
 
 
 def acknowledge(con, event_id: int) -> None:
+    r = con.execute("SELECT rule FROM stop_events WHERE id=?", (event_id,)).fetchone()
+    if r and r[0] == "append_recovery":
+        raise ValueError("an unknown-outcome append can only be cleared by running recovery on the Review page")
     con.execute("UPDATE stop_events SET acknowledged_at=CURRENT_TIMESTAMP WHERE id=?", (event_id,))
+
+
+def resolve_append_recovery(con, cycle_id: int) -> None:
+    """Called by the Review page's recovery flow after it has read the sheet tail and produced a missing-rows CSV."""
+    con.execute("UPDATE stop_events SET acknowledged_at=CURRENT_TIMESTAMP WHERE cycle_id=? AND rule='append_recovery' AND acknowledged_at IS NULL", (cycle_id,))

@@ -212,7 +212,8 @@ class PoolMatch(Step):
                 out[li] = {"sheet_company": e[ix["company"]], "sheet_country": e[ix["country"]], "sheet_domain": _company_domain(e[ix[cfg.output.dedupe.evidence_field]]),
                            "first": it.get("first_name"), "last": it.get("last_name"), "title": t, "family": fam, "linkedin_url": it.get("linkedin_url"),
                            "headline": (it.get("headline") or "")[:110], "lead_location": f"{it.get('city')}, {it.get('country')}", "lead_domain": d,
-                           "existing": [(r[ix["name"]], r[ix["title"]], r[ix["role"]]) for r in by[k]]}
+                           "existing": [(r[ix["name"]], r[ix["title"]], r[ix["role"]]) for r in by[k]],
+                           "existing_row": dict(zip(h, by[k][0]))}          # the company's first sheet row: company-level fields and evidence are reused
         cands = list(out.values())
         for c in cands:      # a namesake is the main risk (VFX cycle 16): flag when the sheet's company domain differs from the lead's
             c["domain_differs"] = bool(c["sheet_domain"] and c["lead_domain"] and c["sheet_domain"] != c["lead_domain"])
@@ -220,4 +221,8 @@ class PoolMatch(Step):
         (ctx.workdir / name).write_text(json.dumps(cands, ensure_ascii=False, indent=0), encoding="utf-8")
         flagged = sum(c["domain_differs"] for c in cands)
         ctx.log(f"{len(cands)} candidates ({flagged} flagged DOMAIN DIFFERS: likely namesakes, check by hand) -> {name}")
+        if ctx.cycle_id:
+            from .. import review
+            n = review.people_from_pool_match(ctx.db, cfg, ctx.cycle_id, cands)
+            ctx.log(f"{n} added to the Review queue as pending people (nothing is written to the sheet until you approve and confirm)")
         return StepResult(counts={"candidates": len(cands), "domain_differs": flagged}, artifacts=[name], message=f"{len(cands)} candidates")

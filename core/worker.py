@@ -8,7 +8,7 @@ import traceback
 
 from contextlib import contextmanager
 
-from . import jobs, keys as keymod, paths, registry, spend
+from . import jobs, keys as keymod, paths, registry, sheets, spend
 from .db import open_db
 from .logmask import mask
 from .steps import get_step
@@ -49,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
         step = get_step(job["step_id"])
         params = step.params_model(**__import__("json").loads(job["params_json"] or "{}"))
         demo = keymod.is_demo(con)
+        cfg = registry.get_config(job["pipeline"]) if job["pipeline"] else None
 
         @contextmanager
         def use_key(provider: str):
@@ -66,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         ctx = StepContext(job_id=jid, cycle_id=job["cycle_id"], workdir=jobs.workdir_for(job["cycle_id"], jid), job_dir=jobs.job_dir(jid),
                           log=lambda m: jobs.log_line(jid, m), is_cancelled=lambda: jobs.cancel_flag_set(jid),
                           lease=lambda prefix: jobs.lease(con, prefix, jid), use_key=use_key, record_spend=record_spend,
-                          cfg=registry.get_config(job["pipeline"]) if job["pipeline"] else None, db=con,
+                          cfg=cfg, db=con, sheet_factory=(lambda: sheets.get_client(con, cfg)[0]) if cfg else None,
                           pipeline_dir=(paths.DATA_DIR / job["pipeline"]) if job["pipeline"] else None)
         result = (step.resume if a.resume else step.run)(ctx, params)
         jobs.log_line(jid, f"finished: {result.message or result.status} {result.counts or ''}".strip())

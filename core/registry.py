@@ -31,7 +31,10 @@ def check_steps(cfg: PipelineConfig) -> tuple[list[str], list[str]]:
         try:
             reg[s.step].params_model(**s.params)
         except Exception as e:                                  # pydantic ValidationError
-            problems.append(f"step '{s.step}': " + "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in getattr(e, "errors", lambda: [{"loc": [], "msg": str(e)}])()))
+            errs = getattr(e, "errors", lambda: [{"loc": [], "msg": str(e), "type": "other"}])()
+            errs = [x for x in errs if x.get("type") != "missing"]      # values only known at run time (e.g. the confirmed row count) are not YAML errors
+            if errs:
+                problems.append(f"step '{s.step}': " + "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in errs))
     return problems, missing
 
 
