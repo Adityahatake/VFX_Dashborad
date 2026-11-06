@@ -121,6 +121,10 @@ class Step:
         """How many records the run may return (used only for the pilot rule)."""
         return None
 
+    def estimate_for(self, con, cfg, params: BaseModel) -> "CostEstimate":
+        """Cost estimate with database and config available (the gate calls this). Default: the context-free estimate. LLM steps override it to use real prompt sizes and prices."""
+        return self.estimate_cost(None, params)
+
     def estimate_cost(self, ctx: StepContext | None, params: BaseModel) -> CostEstimate:
         return CostEstimate()
 

@@ -92,18 +92,22 @@ budget:
   stop_rules: {max_cost_per_row: 0.50, min_pass_rate: 0.03, min_usable_credit: 3.0, low_yield_cycles: 2, low_yield_rows: 5}
 
 llm:
-  enabled: false
-  provider: none
-  model: ""
+  enabled: true  # pipeline switch; nothing runs until the global Settings toggle is on and ANTHROPIC_API_KEY is set
+  provider: anthropic      # still off until the global Settings toggle is on AND ANTHROPIC_API_KEY is set
+  model: claude-sonnet-5-5
   cycle_cap_usd: 1.00
+  effort: low
+  max_page_chars: 12000
+  company_sop_files: [sop/SOP_01.md, sop/manager_overrides.md]
+  person_sop_files: [sop/SOP_02.md, sop/manager_overrides.md]
 
 sop_files: [sop/SOP_01.md, sop/SOP_02.md, sop/SOP_03.md, sop/manager_overrides.md]
 
 exhausted_sources:
-  - {source: "RevenueBase categories (25)", note: "Mined out: about 21,000 companies crawled.", date: "2026-10-28"}
-  - {source: "Agency categories (creative-agencies-for-video, advertising-agencies-with-*)", note: "0 qualifiers from 4,508 sites.", date: "2026-10-28"}
-  - {source: "generative-ai-* / ai-* RevenueBase categories", note: "Mostly tool vendors.", date: "2026-10-28"}
-  - {source: "LinkedIn post search (past month)", note: "0 qualifiers from 42 posts; later runs at or above the $0.50-per-row stop line.", date: "2026-10-28"}
-  - {source: "Sales Navigator gap fill", note: "About $0.90 per row; do not repeat unless free supply is gone.", date: "2026-10-29"}
-  - {source: "Award sites, Cresta, sheet-evidence mining, AI listicles, StudioList/StudioIndex", note: "Cycles 29-34: nothing new.", date: "2026-10-29"}
-  - {source: "Trade press, last 12 months", note: "Only ArtClass and Overture Studios. Rerun monthly with time_range=month only.", date: "2026-10-29"}
+  - {source: "RevenueBase categories (25)", note: "Mined out: about 21,000 companies crawled.", date: "2026-10-28", match: [harvest_revenuebase]}
+  - {source: "Agency categories (creative-agencies-for-video, advertising-agencies-with-*)", note: "0 qualifiers from 4,508 sites.", date: "2026-10-28", match: [creative-agencies, advertising-agencies]}
+  - {source: "generative-ai-* / ai-* RevenueBase categories", note: "Mostly tool vendors.", date: "2026-10-28", match: [generative-ai-, "ai-video", "ai-studio"]}
+  - {source: "LinkedIn post search (past month)", note: "0 qualifiers from 42 posts; later runs at or above the $0.50-per-row stop line.", date: "2026-10-28", match: [linkedin_posts, post_search]}
+  - {source: "Sales Navigator gap fill", note: "About $0.90 per row; do not repeat unless free supply is gone.", date: "2026-10-29", match: [salesnav]}
+  - {source: "Award sites, Cresta, sheet-evidence mining, AI listicles, StudioList/StudioIndex", note: "Cycles 29-34: nothing new.", date: "2026-10-29", match: [cresta, studiolist, studioindex, listicle]}
+  - {source: "Trade press, last 12 months", note: "Only ArtClass and Overture Studios. Rerun monthly with time_range=month only.", date: "2026-10-29", match: [harvest_tavily_press]}

@@ -70,6 +70,10 @@ except Exception as e:
     st.error(f"Parameters are not valid: {e}")
     st.stop()
 
+from core import metrics
+for ex in metrics.matching_exhausted(cfg, sid, params):
+    st.warning(f"**Exhausted source warning:** {ex.source}. {ex.note} ({ex.date}). Think twice before spending time or money on it again.")
+
 g = gate.evaluate(con, cfg, cid, sid, params)
 
 if step.kind == "free":
@@ -81,14 +85,14 @@ else:
     st.markdown(f"#### Before this {step.kind} step runs")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Maximum cost", f"${g.estimate.max_usd:.3f}", g.estimate.note, delta_color="off")
-    m2.metric("Key it will use", (g.key_id or "none") + ("…" if g.key_id else ""))
+    m2.metric("Key it will use", (g.key_id + "…") if g.key_id else "none needed")
     m3.metric("Key balance", f"${g.key_balance:.2f}" if g.key_balance is not None else "n/a")
     m4.metric("Cycle cap remaining", f"${g.remaining:.3f}", f"after this run (worst case): ${g.remaining - g.estimate.max_usd:.3f}", delta_color="off")
     for w in g.warnings:
         st.warning(w)
     for bl in g.blockers:
         st.error("Blocked: " + bl)
-    ok = st.checkbox(f"I confirm: run this {step.kind} step with a maximum cost of ${g.estimate.max_usd:.3f} on {g.key_id}…", disabled=not g.ok, key=f"ok_{sid}")
+    ok = st.checkbox(f"I confirm: run this {step.kind} step with a maximum cost of ${g.estimate.max_usd:.3f}" + (f" on {g.key_id}…" if g.key_id else " (no API key used)"), disabled=not g.ok, key=f"ok_{sid}")
     if st.button(f"Run {step.kind} step", type="primary", disabled=not (g.ok and ok)):
         try:
             jid = gate.confirm_and_start(con, cfg, cid, sid, params, g.estimate.max_usd, g.key_id)

@@ -9,7 +9,7 @@ requires-python = ">=3.11"
 dependencies = ["streamlit", "pydantic>=2", "PyYAML", "cryptography"]
 
 [tool.setuptools]
-packages = ["core", "core.steps"]
+packages = ["core", "core.steps", "core.llm"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

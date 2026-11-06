@@ -143,6 +143,7 @@ def test_llm_has_its_own_cap_separate_from_apify(env, monkeypatch):
         def estimate_cost(self, ctx, params):
             return base.CostEstimate(max_usd=0.6, provider="llm")
     monkeypatch.setitem(base._REGISTRY, "t_llm", L())
+    set_setting(env, "llm.enabled", "1")                      # LLM-kind steps are blocked unless LLM assist is switched on (demo mode supplies the provider)
     c = cycle(env, cap=0.1)                                                 # tiny Apify cap must not matter for LLM
     assert gate.evaluate(env, CFG, c, "t_llm", {}).ok
     spend.record(env, cycle_id=c, step_id="s", source="llm", kind="llm", actual_usd=0.5)

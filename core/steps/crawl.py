@@ -107,6 +107,7 @@ class DeepCrawl(Step):
         pat, keyp = patterns.build(ctx.cfg.evidence), re.compile(p.inner_page_keywords, re.I)
         ctx.log(f"{len(todo)} to crawl ({len(done)} already done)")
         hits = unreachable = 0
+        per_source: dict[str, list[int]] = {}                       # source key -> [screened, hits] for the History page
         batch = p.threads * 2
         with ThreadPoolExecutor(p.threads) as ex, open(out, "a", encoding="utf-8") as f:
             for i in range(0, len(todo), batch):
@@ -115,12 +116,18 @@ class DeepCrawl(Step):
                 for r in ex.map(lambda d: crawl_one(d, pat, p.max_inner_pages, keyp), chunk):
                     f.write(json.dumps(r, ensure_ascii=False) + "\n")
                     unreachable += r["score"] < 0
+                    cat = ((meta.get(r["domain"]) or [{}])[0]).get("cat") or ""
+                    ys = per_source.setdefault(f"{p.tag}:{cat}", [0, 0])                     # same key format as companies.source
+                    ys[0] += r["score"] >= 0                        # unreachable sites were not screened
+                    ys[1] += r["score"] >= 1
                     if r["score"] >= 1:
                         hits += 1
                         self._to_review(ctx, p.tag, r, meta.get(r["domain"]) or [{}])
                 f.flush()
                 known.add_domains(ctx.db, ctx.cfg.name, chunk, "crawled", p.tag)
                 ctx.log(f"{min(i + batch, len(todo))}/{len(todo)} crawled, {hits} with evidence so far")
+        for src, (screened, h) in per_source.items():
+            ctx.db.execute("INSERT INTO source_yield (cycle_id, pipeline, source, screened, hits) VALUES (?,?,?,?,?)", (ctx.cycle_id, ctx.cfg.name, src, screened, h))
         return StepResult(counts={"crawled": len(todo), "with_evidence": hits, "unreachable": unreachable}, artifacts=[out.name],
                           message=f"{hits} companies with AI-plus-client evidence out of {len(todo)} crawled")
 

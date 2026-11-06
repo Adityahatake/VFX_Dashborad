@@ -1,3 +1,4 @@
+import json
 import os
 
 import streamlit as st
@@ -46,6 +47,11 @@ if not os.environ.get("ANTHROPIC_API_KEY"):
 model = st.text_input("Model", value=get_setting(con, "llm.model", "claude-sonnet-5-5"))
 cap = st.number_input("LLM cap per cycle (USD)", min_value=0.0, value=float(get_setting(con, "llm.cycle_cap_usd", "1.0")), step=0.25)
 
+with st.expander("LLM price table (USD per 1M tokens; the spend cap is enforced from these)"):
+    from core import llm as _llm
+    st.caption("Defaults are Anthropic's published list prices when this was built. Check them against your account; a model without a price cannot be used.")
+    pj = st.text_area("Prices (JSON: model -> in, out, cache_read, cache_write)", value=json.dumps(_llm.price_table(con), indent=1), height=200)
+
 st.subheader("Defaults")
 dcap = st.number_input("Default cycle spend cap (USD, never above the pipeline's hard max)", min_value=0.0, value=float(get_setting(con, "default_cap_usd", "3.0")), step=0.5)
 
@@ -53,5 +59,11 @@ if st.button("Save settings"):
     set_setting(con, "llm.enabled", "1" if on else "0")
     set_setting(con, "llm.model", model)
     set_setting(con, "llm.cycle_cap_usd", str(cap))
+    try:
+        tbl = json.loads(pj)
+        assert isinstance(tbl, dict) and all(isinstance(v, dict) and {"in", "out", "cache_read", "cache_write"} <= set(v) and all(float(x) >= 0 for x in v.values()) for v in tbl.values())
+        set_setting(con, "llm.prices", json.dumps(tbl))
+    except Exception:
+        st.error("Price table not saved: it must be JSON like {\"model\": {\"in\": 2, \"out\": 10, \"cache_read\": 0.2, \"cache_write\": 2.5}} with non-negative numbers.")
     set_setting(con, "default_cap_usd", str(dcap))
     st.success("Saved")

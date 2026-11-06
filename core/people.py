@@ -101,6 +101,7 @@ def people_from_leads(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: in
                        contact_or_reference=url, contact_or_reference_type="Personal LinkedIn")
             row[d.evidence_field] = "; ".join(ev_urls + [url])
             row = {k: v for k, v in row.items() if k in cols}
+            row["_headline"], row["_location"] = ld.get("headline", ""), f"{ld.get('city') or ''} {ld.get('country') or ''}".strip()      # review context, not sheet columns
             flags = ["title from a lead database only: Medium confidence", "ai_evidence is the raw crawl sentence: confirm the named client and the tool, and shorten it"]
             con.execute("INSERT INTO people (cycle_id, domain, fields_json, confidence, flags_json) VALUES (?,?,?,?,?)",
                         (cycle_id, dom, json.dumps(row, ensure_ascii=False), cfg.people.database_title_confidence, json.dumps(flags)))

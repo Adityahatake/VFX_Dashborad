@@ -99,7 +99,26 @@ def people_from_pool_match(con: sqlite3.Connection, cfg: PipelineConfig, cycle_i
 
 
 def update_person_fields(con: sqlite3.Connection, person_id: int, fields: dict) -> None:
-    con.execute("UPDATE people SET fields_json=?, decided_at=NULL, decision='pending' WHERE id=?", (json.dumps(fields, ensure_ascii=False), person_id))
+    old = json.loads(con.execute("SELECT fields_json FROM people WHERE id=?", (person_id,)).fetchone()[0] or "{}")
+    merged = {**{k: v for k, v in old.items() if k.startswith("_")}, **fields}            # hidden review context (_headline, _location) survives edits
+    con.execute("UPDATE people SET fields_json=?, decided_at=NULL, decision='pending' WHERE id=?", (json.dumps(merged, ensure_ascii=False), person_id))
+
+
+def apply_person_suggestion(con: sqlite3.Connection, person_id: int) -> dict:
+    """Copy the LLM's person draft into the row's fields. This is a REVIEWER action (a button); it resets the decision to pending, so the row still
+    needs an explicit Approve, and it adds a flag so nobody mistakes model text for a human-written note."""
+    r = con.execute("SELECT fields_json, llm_json, flags_json FROM people WHERE id=?", (person_id,)).fetchone()
+    if not r or not r["llm_json"]:
+        raise ValueError("no LLM suggestion for this person")
+    d, f = json.loads(r["llm_json"]), json.loads(r["fields_json"])
+    f["role"] = d["priority"]
+    f["why_this_person"] = d["why_this_person"]
+    route = "" if d["commercial_route"] == "UNSURE" else f"{d['commercial_route']}: "
+    f["primary_commercial_problem"] = route + d["primary_commercial_problem"]
+    update_person_fields(con, person_id, f)
+    flags = [x for x in json.loads(r["flags_json"] or "[]") if "came from the LLM" not in x] + ["why_this_person and the commercial hypothesis came from the LLM suggestion: read and edit them"]
+    con.execute("UPDATE people SET flags_json=? WHERE id=?", (json.dumps(flags), person_id))
+    return f
 
 
 def decide_person(con: sqlite3.Connection, person_id: int, decision: str, reason: str | None = None) -> None:
@@ -170,3 +189,30 @@ def cycle_report_markdown(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id
         L.append("- none")
     L += ["", "## Spend by source"] + [f"- {s['source']} ({s['kind']}): ${(s['usd'] or 0):.3f}, {s['results'] or 0} results" for s in spend.by_source(con, cycle_id)]
     return "\n".join(L) + "\n"
+
+
+# ---------------------------------------------------------------- LLM suggestions: plain markdown for the Review page
+def llm_company_note(v: dict) -> str:
+    """The LLM's company verdict as markdown, always labelled as a suggestion. Never reorders or pre-selects anything."""
+    bits = [f"**{v.get('qualifies', '?')}**", f"confidence {float(v.get('confidence') or 0):.0%}"]
+    if v.get("named_client"):
+        bits.append(f"client: {v['named_client']}")
+    if v.get("country"):
+        bits.append(f"country: {v['country']}")
+    parts = ["LLM suggestion (not a decision): " + " | ".join(bits)]
+    if v.get("reason"):
+        parts.append(v["reason"])
+    if v.get("quote"):
+        parts.append("> " + v["quote"])
+    if v.get("code"):
+        parts.append(f"_automatic check: {v['code']}_")
+    if v.get("error"):
+        parts.append(f"_error: {v['error']}_")
+    return "\n\n".join(parts)
+
+
+def llm_person_note(d: dict) -> str:
+    parts = [f"LLM suggestion (not a decision): {d['priority']} | {d['role_family']} | route {d['commercial_route']}",
+             f"**why:** {d['why_this_person']}", f"**hypothesis:** {d['primary_commercial_problem']}", f"_confidence {d['confidence']}: {d['confidence_reason']}_"]
+    parts += [f"- {x}" for x in d.get("flags", [])]
+    return "\n\n".join(parts)

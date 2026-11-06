@@ -2,7 +2,7 @@ import json
 
 import streamlit as st
 
-from core import append as ap, gate, jobs, keys, paths, review, sheets, spend
+from core import append as ap, gate, jobs, keys, llm, paths, review, sheets, spend
 from core.db import get_setting, open_db, set_setting
 from core.registry import get_config
 
@@ -27,6 +27,12 @@ if keys.is_demo(con):
 target = "demo" if keys.is_demo(con) else sheets.sheet_target(con)
 st.caption(f"Cycle #{cid} · pipeline {cfg.name} · sheet target: **{target.upper()}**")
 
+_res = llm.resolve(con, cfg)
+if _res.on:
+    st.caption(f"LLM assist is ON ({_res.model}, cap ${_res.cap_usd:.2f}). It only suggests: nothing is approved, rejected or appended by it. Run 'llm_verdicts' or 'llm_person_drafts' from Run Cycle.")
+else:
+    st.caption(f"Manual review: {_res.reason}.")
+
 tab_c, tab_p, tab_s = st.tabs(["Companies", "People", "Sheet and append"])
 
 # ------------------------------------------------------------------ companies
@@ -42,11 +48,11 @@ with tab_c:
         ev = review.company_evidence(c)
         with st.container(border=True):
             st.markdown(f"**{c['name']}** · `{c['domain']}` · {c['country'] or 'country unknown'} · source {c['source']} · _{c['decision']}_")
-            if c["llm_json"]:
-                st.caption("LLM suggestion: " + c["llm_json"])
             for url, sent in (ev.get("ev") or [])[:3]:
                 st.markdown(f"> {' '.join(sent.split())[:420]}")
                 st.markdown(f"[{url}]({url})")
+            if c["llm_json"]:
+                st.info(review.llm_company_note(json.loads(c["llm_json"])))
             a, b, d, e = st.columns([1, 1, 1, 3])
             if a.button("Approve", key=f"ca{c['id']}"):
                 review.decide_company(con, c["id"], "approved")
@@ -71,6 +77,15 @@ with tab_p:
             st.markdown(f"**{f.get('name')}** · {f.get('title')} · {f.get('company')} · {f.get('country')} · {f.get('role')} · confidence **{pr['confidence']}** · _{pr['decision']}_")
             for fl in dict.fromkeys(flags):
                 st.warning(fl)
+            if pr["llm_json"]:
+                dr = json.loads(pr["llm_json"])
+                if "why_this_person" in dr:
+                    st.info(review.llm_person_note(dr))
+                    if st.button("Use this suggestion (you still need to Approve)", key=f"us{pr['id']}"):
+                        review.apply_person_suggestion(con, pr["id"])
+                        st.rerun()
+                elif dr.get("error"):
+                    st.caption(f"LLM draft unavailable: {dr['error']}")
             with st.expander("Edit fields"):
                 edited = {}
                 for col in cfg.output.columns:

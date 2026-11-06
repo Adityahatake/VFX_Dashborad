@@ -130,16 +130,21 @@ class Budget(Strict):
 
 
 class LLM(Strict):
-    enabled: bool = False
-    provider: Literal["none", "anthropic", "groq"] = "none"
+    enabled: bool = False                # pipeline-level switch; the global Settings toggle and ANTHROPIC_API_KEY must ALSO be on
+    provider: Literal["none", "anthropic", "groq"] = "none"      # "groq" is accepted in YAML but not implemented (Anthropic-only build)
     model: str = ""
     cycle_cap_usd: float = Field(1.0, ge=0)
+    effort: Literal["low", "medium", "high"] = "low"             # classification does not need deep thinking
+    max_page_chars: int = Field(12000, ge=1000, le=60000)        # trimmed evidence text per company call
+    company_sop_files: list[str] = []                            # rubric for company verdicts (cached in the system prompt)
+    person_sop_files: list[str] = []                             # rubric for person drafts
 
 
 class ExhaustedSource(Strict):
     source: str
     note: str
     date: str = ""
+    match: list[str] = []                # words that identify this source in a step id or its parameters (used to warn before a rerun)
 
 
 class PipelineConfig(Strict):

@@ -70,6 +70,13 @@ MIGRATIONS: list[tuple[int, str]] = [
     CREATE TABLE known_names (
         name TEXT NOT NULL, pipeline TEXT NOT NULL, source TEXT, first_seen TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (name, pipeline));
     """),
+    (5, """
+    ALTER TABLE people ADD COLUMN llm_json TEXT;
+    CREATE TABLE source_yield (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, cycle_id INTEGER REFERENCES cycles(id), pipeline TEXT, source TEXT NOT NULL,
+        screened INTEGER NOT NULL DEFAULT 0, hits INTEGER NOT NULL DEFAULT 0, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE INDEX idx_yield_cycle ON source_yield(cycle_id);
+    """),
 ]
 
 

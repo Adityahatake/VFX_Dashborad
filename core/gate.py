@@ -40,7 +40,7 @@ class Gate:
 def evaluate(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: int | None, step_id: str, params: dict | None = None) -> Gate:
     step = get_step(step_id)
     p = step.params_model(**(params or {}))
-    est = step.estimate_cost(None, p)
+    est = step.estimate_for(con, cfg, p)
     g = Gate(step_id, step.kind, est, cycle_id)
     if step.kind == "free":
         return g
@@ -56,7 +56,12 @@ def evaluate(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: int | None,
         return g
 
     if step.kind == "llm":
-        cap = cfg.llm.cycle_cap_usd
+        from . import llm
+        res = llm.resolve(con, cfg, provider_factory=getattr(step, "provider_factory", None))
+        if not res.on:
+            g.blockers.append(res.reason)
+            return g
+        cap = res.cap_usd
         g.cycle_cap, g.cycle_spent = cap, spend.llm_spend(con, cycle_id)
         g.remaining = round(cap - g.cycle_spent, 4)
         if est.max_usd > g.remaining:
