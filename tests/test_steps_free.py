@@ -340,7 +340,7 @@ def test_pool_match_errors_are_clear(tmp_path):
 # ---------------------------------------------------------------- registry step validation
 def test_pipeline_step_validation():
     steps, missing = registry.check_steps(CFG)
-    assert steps == [] and "salesnav" in missing and "harvest_tavily_press" in missing and "deep_crawl" not in missing
+    assert steps == [] and missing == ["harvest_tavily_press"]            # the only step in the VFX pipeline not built yet (Tavily-credit gated)
     bad = CFG.model_copy(deep=True)
     bad.steps[0].params = {"nonsense": 1}
     problems, _ = registry.check_steps(bad)

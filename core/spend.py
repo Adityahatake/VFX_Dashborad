@@ -38,6 +38,11 @@ def by_source(con, cycle_id: int | None = None) -> list[sqlite3.Row]:
     return con.execute(f"SELECT source, kind, COUNT(*) AS calls, SUM(actual_usd) AS usd, SUM(results) AS results FROM spend_ledger {w} GROUP BY source, kind ORDER BY usd DESC", a).fetchall()
 
 
+def has_run(con, source: str) -> bool:
+    """Has this actor ever been paid for (in any cycle, including imported VFX history)? Used by the pilot rule."""
+    return con.execute("SELECT 1 FROM spend_ledger WHERE source=? AND actual_usd>0 LIMIT 1", (source,)).fetchone() is not None
+
+
 def reserved(con, cycle_id: int) -> float:
     """Worst-case cost of paid jobs that are queued or running (their actual spend is not in the ledger yet)."""
     return round(con.execute("SELECT COALESCE(SUM(est_max_usd),0) FROM jobs WHERE cycle_id=? AND status IN ('queued','running')", (cycle_id,)).fetchone()[0], 4)

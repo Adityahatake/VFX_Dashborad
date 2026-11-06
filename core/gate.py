@@ -68,6 +68,11 @@ def evaluate(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: int | None,
     if est.max_usd > g.remaining + 1e-9:
         g.blockers.append(f"max cost ${est.max_usd:.3f} exceeds the remaining cycle cap ${g.remaining:.3f}")
 
+    n = step.planned_records(p)
+    if step.pilot_source and n is not None and n > step.pilot_records and not spend.has_run(con, step.pilot_source):
+        g.blockers.append(f"pilot first: '{step.pilot_source}' has never been paid for here. Run it with at most {step.pilot_records} records, "
+                          "check the cost per usable record, then run the full size")
+
     for ev in spend.sync_stop_events(con, cfg, cycle_id):
         g.blockers.append(f"stop rule '{ev['rule']}': {ev['reason']} (acknowledge it on the Spend page to continue)")
 

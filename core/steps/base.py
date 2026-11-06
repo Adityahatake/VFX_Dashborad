@@ -114,6 +114,12 @@ class Step:
     kind: ClassVar[Kind] = "free"
     title: ClassVar[str] = ""
     params_model: ClassVar[type[BaseModel]] = NoParams
+    pilot_source: ClassVar[str | None] = None      # ledger source name of the actor; if it has never run here, the gate demands a small pilot first
+    pilot_records: ClassVar[int] = 25
+
+    def planned_records(self, params: BaseModel) -> int | None:
+        """How many records the run may return (used only for the pilot rule)."""
+        return None
 
     def estimate_cost(self, ctx: StepContext | None, params: BaseModel) -> CostEstimate:
         return CostEstimate()

@@ -460,6 +460,8 @@ def test_pool_match_candidates_become_pending_people_with_honest_flags(tmp_path)
     assert flags[0].startswith("DOMAIN DIFFERS") and any("Medium" in x for x in flags)
     assert review.draft_problems(CFG, f)                                                               # the why_this_person draft blocks approval until edited
     f["why_this_person"] = "Runs creative direction on the studio's AI commercials."
+    assert any("primary_commercial_problem" in x for x in review.draft_problems(CFG, f))      # the commercial-route hypothesis must be written too
+    f["primary_commercial_problem"] = "Hypothesis R1: adding AI to film work."
     assert review.draft_problems(CFG, f) == []
 
 

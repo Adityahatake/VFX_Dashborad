@@ -126,6 +126,10 @@ def draft_problems(cfg: PipelineConfig, fields: dict) -> list[str]:
         p.append("why_this_person is still the draft: write a sentence specific to this person")
     if not str(fields.get(cfg.output.dedupe.evidence_field, "")).strip():
         p.append("evidence_source is empty")
+    if "primary_commercial_problem" in cfg.output.columns and not str(fields.get("primary_commercial_problem", "")).strip():
+        p.append("primary_commercial_problem is empty: write a one-sentence hypothesis from the evidence (never R2 or R4 by default)")
+    if "ai_evidence" in cfg.output.columns and not str(fields.get("ai_evidence", "")).strip():
+        p.append("ai_evidence is empty: name the client or project and the tool")
     return p
 
 
