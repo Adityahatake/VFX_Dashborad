@@ -2,7 +2,11 @@
 
 Local, single-user Streamlit console for running lead-generation pipelines. Pipelines are YAML configs (plus optional custom Python steps). The first one, `vfx_genai`, finds decision-makers at production companies using generative AI in client work.
 
-**Status: phase 1 of 8 (skeleton).** Config validation, SQLite schema, registry, Settings, Pipelines view. No jobs, paid calls or sheet access yet.
+**Status: phase 2 of 8 (jobs engine).** Config validation, SQLite schema, registry, Settings, Pipelines view, and background jobs (detached workers, live logs, cancel, resume, reconcile, one-job-per-key leases). Only a free demo step exists; no paid calls or sheet access yet.
+
+## Jobs engine in one paragraph
+
+Each step runs as its own detached process (`py -m core.worker --job <id>`), launched through a short-lived intermediary so it is not a child of Streamlit: closing the tab, stopping Streamlit or killing its process tree does not stop a job. State (PID, heartbeat, log and checkpoint paths) is in SQLite. On every app start and Jobs refresh, jobs whose process is gone become `interrupted`; **Resume** continues from the checkpoint. **Cancel** sets a flag file the step checks, and kills the process after 15 s if it does not react. A key lease allows one job per API key; a lease held by a dead job is released. Paid, LLM and write steps cannot be started without an explicit confirmation.
 
 ## Setup (Windows)
 

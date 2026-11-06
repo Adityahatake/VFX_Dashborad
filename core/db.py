@@ -55,6 +55,10 @@ MIGRATIONS: list[tuple[int, str]] = [
     CREATE INDEX idx_ledger_cycle ON spend_ledger(cycle_id);
     CREATE INDEX idx_companies_cycle ON companies(cycle_id);
     """),
+    (2, """
+    ALTER TABLE jobs ADD COLUMN cancel_requested_at TEXT;
+    ALTER TABLE jobs ADD COLUMN resumed_count INTEGER NOT NULL DEFAULT 0;
+    """),
 ]
 
 
