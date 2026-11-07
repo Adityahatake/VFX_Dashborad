@@ -6,6 +6,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from . import fields as F
 from .config import PipelineConfig
 from .dedupe import url_key
 from .textnorm import ntoks
@@ -70,12 +71,12 @@ def people_from_pool_match(con: sqlite3.Connection, cfg: PipelineConfig, cycle_i
     """Turn pool_match candidates into pending people rows. The company-level fields are copied from the person's existing row
     (VFX: 'reuse the existing row's company fields and evidence'); the person-specific `why_this_person` is a plain factual draft that is
     flagged for editing. Confidence is Medium (title from a lead database). Returns how many were added."""
-    cols = cfg.output.columns
+    cols = F.internal_columns(cfg)
     added = 0
     for c in candidates:
         ex = c.get("existing_row") or {}
         url = c.get("linkedin_url") or ""
-        have = {url_key(json.loads(r[0]).get(cols[cols.index(cfg.output.dedupe.url_fields[0])], "")) for r in
+        have = {url_key(json.loads(r[0]).get(F.url_key_name(cfg), "")) for r in
                 con.execute("SELECT fields_json FROM people WHERE cycle_id=?", (cycle_id,))}
         if url_key(url) in have:
             continue
@@ -83,11 +84,11 @@ def people_from_pool_match(con: sqlite3.Connection, cfg: PipelineConfig, cycle_i
         row = _blank(cols)
         row.update({k: ex.get(k, "") for k in ("primary_classification", "ai_adoption_stage", "ai_evidence", "primary_commercial_problem",
                                                 "qualification_decision", "qa_decision", "outreach_readiness", "contact_or_reference_type") if k in cols})
-        company_urls = [u for u in (ex.get(cfg.output.dedupe.evidence_field, "") or "").split(";") if u.strip()]
+        company_urls = [u for u in (ex.get(F.evidence_key(cfg), "") or "").split(";") if u.strip()]
         row.update(name=f"{c.get('first') or ''} {c.get('last') or ''}".strip(), company=c["sheet_company"], title=c.get("title", ""),
                    role=f"P{min(3, n_existing + 1)}", country=c.get("sheet_country", ""), qa_confidence=cfg.people.database_title_confidence,
                    contact_or_reference=url, why_this_person=f"{c.get('title', '')} at {c['sheet_company']} ({c.get('family', 'role')} role); EDIT: say what this person owns.")
-        row[cfg.output.dedupe.evidence_field] = "; ".join([u.strip() for u in company_urls] + [url])
+        row[F.evidence_key(cfg)] = "; ".join([u.strip() for u in company_urls] + [url])
         row = {k: v for k, v in row.items() if k in cols}
         flags = ["title from a lead database only: Medium confidence"]      # the draft warning is computed live by draft_problems() so it never goes stale
         if c.get("domain_differs"):
@@ -130,11 +131,9 @@ def decide_person(con: sqlite3.Connection, person_id: int, decision: str, reason
 
 
 def approved_rows(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: int) -> list[list[str]]:
-    cols = cfg.output.columns
     out = []
     for r in con.execute("SELECT fields_json FROM people WHERE cycle_id=? AND decision='approved' ORDER BY id", (cycle_id,)):
-        f = json.loads(r[0])
-        out.append([str(f.get(c, "")) for c in cols])
+        out.append(F.row_from_fields(cfg, json.loads(r[0])))        # internal names -> the sheet's column order
     return out
 
 
@@ -143,11 +142,11 @@ def draft_problems(cfg: PipelineConfig, fields: dict) -> list[str]:
     p = []
     if "EDIT:" in str(fields.get("why_this_person", "")) or not str(fields.get("why_this_person", "")).strip():
         p.append("why_this_person is still the draft: write a sentence specific to this person")
-    if not str(fields.get(cfg.output.dedupe.evidence_field, "")).strip():
+    if not str(fields.get(F.evidence_key(cfg), "")).strip():
         p.append("evidence_source is empty")
-    if "primary_commercial_problem" in cfg.output.columns and not str(fields.get("primary_commercial_problem", "")).strip():
+    if "primary_commercial_problem" in F.internal_columns(cfg) and not str(fields.get("primary_commercial_problem", "")).strip():
         p.append("primary_commercial_problem is empty: write a one-sentence hypothesis from the evidence (never R2 or R4 by default)")
-    if "ai_evidence" in cfg.output.columns and not str(fields.get("ai_evidence", "")).strip():
+    if "ai_evidence" in F.internal_columns(cfg) and not str(fields.get("ai_evidence", "")).strip():
         p.append("ai_evidence is empty: name the client or project and the tool")
     return p
 
@@ -179,7 +178,7 @@ def cycle_report_markdown(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id
         L.append(f"### {co}")
         for f in fs:
             L.append(f"- **{f.get('name')}**, {f.get('title')} ({f.get('role')}, {f.get('qa_confidence')}): {f.get('why_this_person', '')}")
-            L.append(f"  - evidence: {f.get(cfg.output.dedupe.evidence_field, '')}")
+            L.append(f"  - evidence: {f.get(F.evidence_key(cfg), '')}")
     border = [f for f in ok if f.get("qa_confidence") != "High"]
     L += ["", "## Borderline (Medium confidence)"] + ([f"- {f.get('name')} at {f.get('company')}: title from a lead database only" for f in border] or ["- none"])
     rej_c = con.execute("SELECT reason_code, COUNT(*) FROM companies WHERE cycle_id=? AND decision='rejected' GROUP BY reason_code", (cycle_id,)).fetchall()

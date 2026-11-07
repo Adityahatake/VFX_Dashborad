@@ -2,7 +2,7 @@ import json
 
 import streamlit as st
 
-from core import append as ap, gate, jobs, keys, llm, paths, review, sheets, spend
+from core import append as ap, fields as F, gate, jobs, keys, llm, paths, review, sheets, spend
 from core.db import get_setting, open_db, set_setting
 from core.registry import get_config
 
@@ -88,7 +88,7 @@ with tab_p:
                     st.caption(f"LLM draft unavailable: {dr['error']}")
             with st.expander("Edit fields"):
                 edited = {}
-                for col in cfg.output.columns:
+                for col in F.internal_columns(cfg):          # people fields use internal names; the sheet column names are applied when the row is built
                     edited[col] = st.text_area(col, f.get(col, ""), key=f"f{pr['id']}_{col}", height=68) if len(str(f.get(col, ""))) > 70 else st.text_input(col, f.get(col, ""), key=f"f{pr['id']}_{col}")
                 if st.button("Save edits (resets the decision to pending)", key=f"sv{pr['id']}"):
                     review.update_person_fields(con, pr["id"], edited)

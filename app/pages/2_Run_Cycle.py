@@ -6,7 +6,7 @@ from core import gate, keys, paths, spend
 from core.config import effective_cap
 from core.db import get_setting, open_db
 from core.registry import load_all
-from core.steps import all_steps
+from core.steps import steps_for
 
 paths.load_env()
 st.set_page_config(page_title="Run Cycle", layout="wide")
@@ -55,7 +55,7 @@ for ev in open_ev:
     st.error(f"Stop rule '{ev['rule']}': {ev['reason']}. Paid steps are blocked until acknowledged on the Spend page.")
 
 st.subheader("2. Run a step")
-steps = all_steps()
+steps = steps_for(name)          # built-in steps plus this pipeline's own custom steps
 sid = st.selectbox("Step", list(steps), format_func=lambda s: f"{s}  [{steps[s].kind}]  {steps[s].title}")
 step = steps[sid]
 try:

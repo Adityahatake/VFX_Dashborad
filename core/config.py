@@ -102,9 +102,16 @@ class Output(Strict):
         for f in [d.name_field, d.company_field, d.evidence_field, d.country_field, *d.url_fields]:
             if f not in self.columns:
                 raise ValueError(f"dedupe field '{f}' is not in output.columns")
+        from .fields import INTERNAL_FIELDS
         for k, v in self.field_map.items():
+            if k not in INTERNAL_FIELDS:
+                raise ValueError(f"field_map key '{k}' is not an internal field (allowed: {', '.join(INTERNAL_FIELDS)})")
             if v not in self.columns:
                 raise ValueError(f"field_map['{k}'] -> '{v}' is not in output.columns")
+        inv = {v: k for k, v in self.field_map.items()}
+        internal = [inv.get(c, c) for c in self.columns]
+        if len(set(internal)) != len(internal) or len(inv) != len(self.field_map):
+            raise ValueError("field_map is ambiguous: two columns would share one internal name (a column named like a mapped internal field, or two fields mapped to one column)")
         return self
 
 

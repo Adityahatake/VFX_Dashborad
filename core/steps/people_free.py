@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import web
+from .. import fields as F, web
 from ..textnorm import norm, ntoks
 from .base import Step, StepContext, StepResult, register
 from .harvest import _need_pipeline
@@ -153,7 +153,7 @@ class PoolMatch(Step):
         wt = cfg.output.write_tab
         tab = snap[wt.name]
         h = tab["header"]
-        need = ["name", "company", "title", "role", "country", cfg.output.dedupe.evidence_field, cfg.output.dedupe.url_fields[0]]
+        need = [F.to_column(cfg, k) for k in ("name", "company", "title", "role", "country")] + [cfg.output.dedupe.evidence_field, cfg.output.dedupe.url_fields[0]]
         missing = [c for c in need if c not in h]
         if missing:
             raise ValueError(f"the sheet header has no column(s) {missing}; pool_match needs them")
@@ -161,13 +161,13 @@ class PoolMatch(Step):
         rows = [(r + [""] * len(h))[: len(h)] for r in tab["rows"] if r and str(r[0]).strip()]
         names = set()
         for t in snap.values():
-            th = t["header"]
-            if "name" in th:
-                names |= {" ".join(ntoks(r[th.index("name")])) for r in t["rows"] if len(r) > th.index("name")}
+            th, nf = t["header"], cfg.output.dedupe.name_field
+            if nf in th:
+                names |= {" ".join(ntoks(r[th.index(nf)])) for r in t["rows"] if len(r) > th.index(nf)}
         urls = {_url_key(r[ix[cfg.output.dedupe.url_fields[0]]]) for r in rows if r[ix[cfg.output.dedupe.url_fields[0]]]}
         by = collections.defaultdict(list)
         for r in rows:
-            by[norm(r[ix["company"]])].append(r)
+            by[norm(r[ix[F.to_column(cfg, "company")]])].append(r)
         dom = {}
         for k, v in by.items():
             for r in v:
@@ -205,15 +205,15 @@ class PoolMatch(Step):
                 if india and india.search(" ".join(str(it.get(x) or "") for x in ("city", "country", "headline"))):
                     continue
                 fam = _family(t, cfg.people.role_families)
-                have = {_family(r[ix["title"]], cfg.people.role_families) for r in by[k]}
+                have = {_family(r[ix[F.to_column(cfg, "title")]], cfg.people.role_families) for r in by[k]}
                 if fam in have and fam != "other":
                     continue
                 e = by[k][0]
-                out[li] = {"sheet_company": e[ix["company"]], "sheet_country": e[ix["country"]], "sheet_domain": _company_domain(e[ix[cfg.output.dedupe.evidence_field]]),
+                out[li] = {"sheet_company": e[ix[F.to_column(cfg, "company")]], "sheet_country": e[ix[F.to_column(cfg, "country")]], "sheet_domain": _company_domain(e[ix[cfg.output.dedupe.evidence_field]]),
                            "first": it.get("first_name"), "last": it.get("last_name"), "title": t, "family": fam, "linkedin_url": it.get("linkedin_url"),
                            "headline": (it.get("headline") or "")[:110], "lead_location": f"{it.get('city')}, {it.get('country')}", "lead_domain": d,
-                           "existing": [(r[ix["name"]], r[ix["title"]], r[ix["role"]]) for r in by[k]],
-                           "existing_row": dict(zip(h, by[k][0]))}          # the company's first sheet row: company-level fields and evidence are reused
+                           "existing": [(r[ix[F.to_column(cfg, "name")]], r[ix[F.to_column(cfg, "title")]], r[ix[F.to_column(cfg, "role")]]) for r in by[k]],
+                           "existing_row": F.fields_from_row(cfg, h, by[k][0])}          # the company's first sheet row: company-level fields and evidence are reused
         cands = list(out.values())
         for c in cands:      # a namesake is the main risk (VFX cycle 16): flag when the sheet's company domain differs from the lead's
             c["domain_differs"] = bool(c["sheet_domain"] and c["lead_domain"] and c["sheet_domain"] != c["lead_domain"])

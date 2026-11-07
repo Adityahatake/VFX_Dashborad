@@ -7,6 +7,7 @@ import json
 import re
 import sqlite3
 
+from . import fields as F
 from .config import PipelineConfig
 from .dedupe import country_key, url_key
 from .textnorm import clean_domain
@@ -68,11 +69,11 @@ def choose(cfg: PipelineConfig, leads: list[dict], n: int = MAX_CANDIDATES_PER_C
 
 def people_from_leads(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: int, leads: list[dict]) -> dict:
     """Group leads by company domain, keep the best per company, add them as pending people. Returns counts and per-lead rejection reasons."""
-    cols, d = cfg.output.columns, cfg.output.dedupe
+    cols, d = F.internal_columns(cfg), cfg.output.dedupe
     comp = {r["domain"]: r for r in con.execute("SELECT * FROM companies WHERE cycle_id=? AND decision='approved'", (cycle_id,))}
     have = set()
     for r in con.execute("SELECT fields_json FROM people WHERE cycle_id=?", (cycle_id,)):
-        have.add(url_key(json.loads(r[0]).get(d.url_fields[0], "")))
+        have.add(url_key(json.loads(r[0]).get(F.url_key_name(cfg), "")))
     by: dict[str, list[dict]] = {}
     skipped: dict[str, int] = {}
     for ld in leads:
@@ -99,7 +100,7 @@ def people_from_leads(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: in
                        ai_adoption_stage="Active Production", ai_evidence=ev_text, primary_commercial_problem="", why_this_person="",
                        qualification_decision="PASS-B", qa_decision="PASS", qa_confidence=cfg.people.database_title_confidence, outreach_readiness="Ready",
                        contact_or_reference=url, contact_or_reference_type="Personal LinkedIn")
-            row[d.evidence_field] = "; ".join(ev_urls + [url])
+            row[F.evidence_key(cfg)] = "; ".join(ev_urls + [url])
             row = {k: v for k, v in row.items() if k in cols}
             row["_headline"], row["_location"] = ld.get("headline", ""), f"{ld.get('city') or ''} {ld.get('country') or ''}".strip()      # review context, not sheet columns
             flags = ["title from a lead database only: Medium confidence", "ai_evidence is the raw crawl sentence: confirm the named client and the tool, and shorten it"]

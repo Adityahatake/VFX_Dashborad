@@ -23,10 +23,14 @@ class Loaded:
 def check_steps(cfg: PipelineConfig) -> tuple[list[str], list[str]]:
     """(problems, not-yet-available step ids). A step id with no implementation yet is a warning; bad params for a real step are a problem."""
     from .steps import all_steps
+    from .steps.base import origin_of
     reg, problems, missing = all_steps(), [], []
     for s in cfg.steps:
         if s.step not in reg:
             missing.append(s.step)
+            continue
+        if origin_of(s.step) not in ("builtin", cfg.name):
+            problems.append(f"step '{s.step}' belongs to pipeline '{origin_of(s.step)}', not '{cfg.name}'")
             continue
         try:
             reg[s.step].params_model(**s.params)

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 ROOT = Path(os.environ.get("LPD_ROOT", Path(__file__).resolve().parent.parent))
-PIPELINES_DIR = ROOT / "pipelines"
+PIPELINES_DIR = Path(os.environ.get("LPD_PIPELINES", ROOT / "pipelines"))
 DATA_DIR = Path(os.environ.get("LPD_DATA", ROOT / "data"))
 DB_PATH = DATA_DIR / "dashboard.sqlite"
 
@@ -29,4 +29,5 @@ def ensure_dirs() -> None:
 
 
 def pipeline_dirs() -> list[Path]:
-    return sorted(p for p in PIPELINES_DIR.iterdir() if (p / "pipeline.yaml").exists()) if PIPELINES_DIR.exists() else []
+    """Pipeline folders. A folder starting with '_' (for example _archived) is never a pipeline."""
+    return sorted(p for p in PIPELINES_DIR.iterdir() if not p.name.startswith("_") and (p / "pipeline.yaml").exists()) if PIPELINES_DIR.exists() else []

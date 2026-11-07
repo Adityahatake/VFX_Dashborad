@@ -19,4 +19,10 @@ Local single-user Streamlit dashboard for lead-generation pipelines. First pipel
 - Manager overrides: max 3 people per company, database-only title = Medium, India always excluded.
 
 ## Layout
-`core/` logic (config, db, registry, logmask now; jobs, spend, keys, sheets, steps later), `app/` Streamlit pages, `pipelines/<name>/` YAML + SOPs + optional custom steps, `data/` git-ignored runtime state.
+`core/` logic (config, db, registry, wizard, fields, jobs, worker, keys, spend, gate, sheets, dedupe, append, review, people, metrics, apify, llm/), `core/steps/` built-in steps and custom-step discovery, `app/` Streamlit pages, `pipelines/<name>/` YAML + SOPs + optional `steps/*.py` (`pipelines/_archived/` is ignored), `scripts/`, `tests/`, `data/` git-ignored runtime state.
+
+## More rules learned while building
+- People fields in the database use INTERNAL names (`core/fields.py`); the pipeline's `field_map` is applied only when building a sheet row or reading one. Never hard-code a sheet column name in a step.
+- Never write a Streamlit page edit through shell escapes: backslash sequences get reinterpreted. Use the Edit/Write tools, or `chr(92)`.
+- Custom steps are trusted code; the gate (kind paid/llm/write) is the control, not a sandbox.
+- Run the full suite (`.\.venv\Scripts\python -m pytest`) before committing; it includes a headless render of every page.
