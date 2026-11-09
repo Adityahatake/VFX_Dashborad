@@ -26,12 +26,17 @@ def add_name(con: sqlite3.Connection, pipeline: str, name: str, source: str = ""
         con.execute("INSERT OR IGNORE INTO known_names (name, pipeline, source) VALUES (?,?,?)", (s, pipeline, source))
 
 
-def seen_domains(con: sqlite3.Connection, pipeline: str) -> set[str]:
+def seen_domains(con: sqlite3.Connection, pipeline: str, statuses: tuple[str, ...] | None = None) -> set[str]:
+    """Domains known for a pipeline, optionally only those with one of the given statuses (crawled, pooled, verified, rejected)."""
+    if statuses:
+        q = "SELECT DISTINCT domain FROM known_domains WHERE pipeline=? AND status IN (%s)" % ",".join("?" * len(statuses))
+        return {r[0] for r in con.execute(q, (pipeline, *statuses))}
     return {r[0] for r in con.execute("SELECT DISTINCT domain FROM known_domains WHERE pipeline=?", (pipeline,))}
 
 
-def known_names(con: sqlite3.Connection, pipeline: str) -> set[str]:
-    """Squashed company names plus squashed domains: the set domain_is_known() matches against."""
+def known_names(con: sqlite3.Connection, pipeline: str, statuses: tuple[str, ...] | None = None) -> set[str]:
+    """Squashed company names plus squashed domains: the set domain_is_known() matches against. `statuses` limits which DOMAINS count
+    (names, e.g. sheet companies, always count)."""
     names = {r[0] for r in con.execute("SELECT name FROM known_names WHERE pipeline=?", (pipeline,))}
-    names |= {re.sub(r"[^a-z0-9]", "", d) for d in seen_domains(con, pipeline)}
+    names |= {re.sub(r"[^a-z0-9]", "", d) for d in seen_domains(con, pipeline, statuses)}
     return names - {""}

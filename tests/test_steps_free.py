@@ -345,3 +345,18 @@ def test_pipeline_step_validation():
     bad.steps[0].params = {"nonsense": 1}
     problems, _ = registry.check_steps(bad)
     assert problems and "harvest_revenuebase" in problems[0]
+
+
+def test_pools_mode_rescans_pool_only_companies_but_not_crawled_or_rejected_ones(tmp_path, monkeypatch):
+    ctx, con, _ = make_ctx(tmp_path)
+    fake_sites(monkeypatch)
+    pools = ctx.pipeline_dir / "pools"
+    pools.mkdir(parents=True)
+    person = lambda d: {"organization_primary_domain": d, "organization_name": d, "title": "Founder & CEO", "linkedin_url": f"https://linkedin.com/in/{d}", "first_name": "A", "last_name": "B"}
+    (pools / "pool_x.json").write_text(json.dumps([person("poolonly.com"), person("poolcrawled.com"), person("poolrejected.com"), person("good.com")]))
+    for d in ("poolonly.com", "poolcrawled.com", "poolrejected.com", "good.com"):
+        known.add_domain(con, CFG.name, d, "pooled")                               # every paid-pool domain is imported as 'pooled'
+    known.add_domain(con, CFG.name, "poolcrawled.com", "crawled")                  # this one was also deep-crawled before
+    known.add_domain(con, CFG.name, "poolrejected.com", "rejected")
+    crawl.DeepCrawl().run(ctx, crawl.CrawlParams(source="pools", tag="pl", threads=2))
+    assert set(json.loads((ctx.workdir / "pl_domains.json").read_text())) == {"poolonly.com", "good.com"}

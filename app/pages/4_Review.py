@@ -112,15 +112,16 @@ with tab_s:
         st.stop()
     st.write(f"Connected to: **{label}**")
     if not keys.is_demo(con):
-        t = st.radio("Sheet target", ["sandbox", "real"], index=0 if sheets.sheet_target(con) == "sandbox" else 1, horizontal=True)
+        labels = {"sandbox": "sandbox (writes allowed)", "real_readonly": "REAL sheet, read-only", "real": "REAL sheet (writes allowed)"}
+        t = st.radio("Sheet target", list(sheets.TARGETS), index=sheets.TARGETS.index(sheets.sheet_target(con)), format_func=labels.get, horizontal=True)
         if t != sheets.sheet_target(con):
             if t == "real":
-                word = st.text_input("To switch to the REAL shared sheet type REAL SHEET")
-                if word == "REAL SHEET" and st.button("Switch to the real sheet"):
+                word = st.text_input("To switch to the REAL shared sheet WITH WRITES type REAL SHEET")
+                if word == "REAL SHEET" and st.button("Switch to the real sheet (writes allowed)"):
                     set_setting(con, "sheet_target", "real")
                     st.rerun()
             else:
-                set_setting(con, "sheet_target", "sandbox")
+                set_setting(con, "sheet_target", t)
                 st.rerun()
 
     st.subheader("Baseline and progress")
@@ -171,7 +172,10 @@ with tab_s:
         st.warning(f"This writes to **{label}**. Rows are appended in batches of {cfg.output.dedupe.batch_size}; the tabs are re-read before every batch; "
                    "nothing is ever retried, deleted or reordered.")
         typed = st.text_input(f"Type the number of rows to confirm ({len(built)})", key="typed_n")
-        if st.button("Append to sheet", type="primary", disabled=typed.strip() != str(len(built)) or not dry or bool(dry.get("stop"))):
+        read_only = (not keys.is_demo(con)) and sheets.sheet_target(con) == "real_readonly"
+        if read_only:
+            st.info("The sheet target is READ-ONLY: the dry run above is as far as this run goes. The review CSV is the output.")
+        if st.button("Append to sheet", type="primary", disabled=read_only or typed.strip() != str(len(built)) or not dry or bool(dry.get("stop"))):
             try:
                 jid = gate.confirm_and_start(con, cfg, cid, "append_sheet", {"csv_name": "review.csv", "tag": f"c{cid}", "expected_rows": len(built)}, 0.0, None)
                 st.session_state["append_job"] = jid

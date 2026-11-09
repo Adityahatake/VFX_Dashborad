@@ -52,7 +52,8 @@ def build_pool_domains(ctx: StepContext, tag: str) -> int:
     ok = re.compile("|".join(re.escape(t) for t in cfg.people.decision_titles), re.I)
     bad = re.compile("|".join(rf"\b{re.escape(t)}\b" for t in cfg.people.reject_titles), re.I) if cfg.people.reject_titles else None
     india = re.compile("|".join(cfg.countries.excluded_patterns), re.I) if cfg.countries.excluded_patterns else None
-    names, by = known.known_names(ctx.db, cfg.name), {}
+    skip = ("crawled", "verified", "rejected")          # NOT 'pooled': companies that only sit in a paid pool are what this mode re-screens
+    names, by = known.known_names(ctx.db, cfg.name, skip), {}
     for f in glob.glob(str(ctx.pipeline_dir / "pools" / "pool_*.json")):
         try:
             items = json.load(open(f, encoding="utf-8"))

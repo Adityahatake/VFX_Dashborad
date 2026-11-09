@@ -53,6 +53,9 @@ def evaluate(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: int | None,
         return g
     floor = cfg.budget.min_key_balance_usd
     if step.kind == "write":          # sheet writes have their own confirmation on the Review page; caps and stop rules are about spend
+        from . import keys as _keys, sheets as _sheets
+        if not _keys.is_demo(con) and _sheets.sheet_target(con) == "real_readonly":
+            g.blockers.append("the sheet target is READ-ONLY (Review > Sheet and append): switch it to sandbox or real before appending")
         return g
 
     if step.kind == "llm":

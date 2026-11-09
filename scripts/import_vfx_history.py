@@ -93,7 +93,7 @@ def run(con, vfx: Path, pipeline: str, dry: bool = False) -> dict:
         return c
 
     known.add_domains(con, pipeline, pooled, "pooled", "vfx_import")
-    known.add_domains(con, pipeline, crawled - pooled, "crawled", "vfx_import")
+    known.add_domains(con, pipeline, crawled, "crawled", "vfx_import")
     for n in names:
         known.add_name(con, pipeline, n, "vfx_import")
     for date, tag, actor, key, cost, results, note in spend_rows:

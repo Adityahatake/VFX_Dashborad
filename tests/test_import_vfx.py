@@ -49,3 +49,14 @@ def test_dry_run_writes_nothing(tmp_path, monkeypatch):
     imp.run(con, vfx, "vfx_genai", dry=True)
     assert con.execute("SELECT COUNT(*) FROM known_domains").fetchone()[0] == 0
     assert not (paths.DATA_DIR / "vfx_genai").exists()
+
+
+def test_a_domain_that_is_pooled_and_crawled_keeps_both_statuses(tmp_path, monkeypatch):
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path / "data")
+    vfx = make_vfx(tmp_path / "vfx")
+    (vfx / "data" / "y_crawl.jsonl").write_text(json.dumps({"domain": "poolco.com", "score": 0}) + "\n")      # poolco.com is also in pool_a.json
+    con = open_db(tmp_path / "t.sqlite")
+    imp.run(con, vfx, "vfx_genai")
+    st = {r[0] for r in con.execute("SELECT status FROM known_domains WHERE domain='poolco.com'")}
+    assert st == {"pooled", "crawled"}
+    assert known.seen_domains(con, "vfx_genai", ("crawled",)) >= {"poolco.com", "crawled.com"} and "poolonly.com" not in known.seen_domains(con, "vfx_genai", ("crawled",))

@@ -19,6 +19,7 @@ from typing import Protocol
 from . import http, paths
 
 SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+SCOPE_READONLY = "https://www.googleapis.com/auth/spreadsheets.readonly"      # a token with this scope cannot write, whatever the code does
 
 
 def col_letter(n: int) -> str:
@@ -60,8 +61,8 @@ class SheetsClient(Protocol):
 
 # ------------------------------------------------------------------ real client
 class GoogleSheets:
-    def __init__(self, sheet_id: str, cred_path: str | Path):
-        self.sid, self.cred = sheet_id, Path(cred_path)
+    def __init__(self, sheet_id: str, cred_path: str | Path, scope: str = SCOPE):
+        self.sid, self.cred, self.scope = sheet_id, Path(cred_path), scope
         self._tok: tuple[str, float] | None = None
 
     def _token(self) -> str:
@@ -73,7 +74,7 @@ class GoogleSheets:
         c = json.loads(self.cred.read_text(encoding="utf-8"))
         now = int(time.time())
         h = b(json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":")).encode())
-        p = b(json.dumps({"iss": c["client_email"], "scope": SCOPE, "aud": c["token_uri"], "iat": now, "exp": now + 3600}, separators=(",", ":")).encode())
+        p = b(json.dumps({"iss": c["client_email"], "scope": self.scope, "aud": c["token_uri"], "iat": now, "exp": now + 3600}, separators=(",", ":")).encode())
         sig = serialization.load_pem_private_key(c["private_key"].encode(), password=None).sign(f"{h}.{p}".encode(), padding.PKCS1v15(), hashes.SHA256())
         req = urllib.request.Request(c["token_uri"], method="POST", data=urllib.parse.urlencode(
             {"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": f"{h}.{p}.{b(sig)}"}).encode())
@@ -263,12 +264,34 @@ class SafeSheet:
         return self._inner.batch_update(requests)
 
 
+class ReadOnlySheet:
+    """Reads only. Any write call raises, so a read-only run can never change a sheet even by mistake (the real client also uses a read-only token)."""
+
+    def __init__(self, inner: SheetsClient, write_tab: str):
+        self._inner, self.write_tab = inner, write_tab
+
+    def get_values(self, rng: str) -> list[list[str]]:
+        return self._inner.get_values(rng)
+
+    def tab_ids(self) -> dict[str, int]:
+        return self._inner.tab_ids()
+
+    def append(self, tab: str, values: list[list[str]]) -> dict:
+        raise PermissionError("this run is READ-ONLY: nothing can be written to the sheet")
+
+    def batch_update(self, requests: list[dict]) -> dict:
+        raise PermissionError("this run is READ-ONLY: nothing can be written to the sheet")
+
+
 # ------------------------------------------------------------------ choosing the sheet
 DEMO_TABS_FILE = "demo_sheet.json"
 
 
+TARGETS = ("sandbox", "real_readonly", "real")
+
+
 def sheet_target(con) -> str:
-    """'sandbox' (default) or 'real'. Demo mode overrides both with an in-memory demo sheet."""
+    """'sandbox' (default), 'real_readonly' (the real sheet, reads only) or 'real' (writes allowed). Demo mode overrides all with an in-memory demo sheet."""
     from .db import get_setting
     return get_setting(con, "sheet_target", "sandbox") or "sandbox"
 
@@ -301,10 +324,12 @@ def get_client(con, cfg) -> tuple[SafeSheet, str]:
     if keys.is_demo(con):
         return SafeSheet(demo_sheet(cfg), wt), "DEMO sheet (in memory)"
     target = sheet_target(con)
-    env = cfg.output.sheet_id_env if target == "real" else "SANDBOX_SHEET_ID"
+    env = cfg.output.sheet_id_env if target in ("real", "real_readonly") else "SANDBOX_SHEET_ID"
     sid, cred = os.environ.get(env, ""), os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
     if not sid:
         raise RuntimeError(f"{env} is not set in .env, so the {target} sheet cannot be used (turn on demo mode in Settings to try the flow without a sheet)")
     if not cred or not Path(cred).exists():
         raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not set or the file does not exist")
+    if target == "real_readonly":
+        return ReadOnlySheet(GoogleSheets(sid, cred, scope=SCOPE_READONLY), wt), f"REAL sheet, READ-ONLY ({sid[:6]}…)"
     return SafeSheet(GoogleSheets(sid, cred), wt), f"{target.upper()} sheet ({sid[:6]}…)"
