@@ -129,7 +129,7 @@ def test_reconcile_marks_dead_jobs_interrupted_and_frees_leases(env):
 
 
 def test_job_survives_loss_of_the_launcher(env):
-    """The worker is independent of the process that launched it: a fresh connection (as after a Streamlit restart) still sees it running."""
+    """The worker is independent of the process that launched it: a fresh connection (as after a server restart) still sees it running."""
     jid = jobs.start_job(env, "demo_slow", {"duration_s": 60, "tick_s": 0.5})
     wait_for(env, jid, ("running",))
     other = open_db()
@@ -141,7 +141,7 @@ def test_job_survives_loss_of_the_launcher(env):
 
 @pytest.mark.skipif(os.name != "nt", reason="tree-kill semantics tested on Windows")
 def test_worker_survives_tree_kill_of_the_launcher(env):
-    """What happens when Streamlit's process tree is killed (terminal closed, tool stopped it): the worker must keep running."""
+    """What happens when the server's process tree is killed (terminal closed, tool stopped it): the worker must keep running."""
     import subprocess
     import sys
     code = ("from core import jobs, paths\nfrom core.db import open_db\nimport time\n"

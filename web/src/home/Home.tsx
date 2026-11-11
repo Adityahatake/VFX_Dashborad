@@ -7,6 +7,7 @@ import { Jobs, RecentRuns } from "./Jobs";
 import { LatestCompanies, LatestPeople } from "./Review";
 import { LiveRun, RunPipeline } from "./RunPipeline";
 import { RunStep } from "./RunStep";
+import { SheetAppend } from "./SheetAppend";
 
 /** The control centre: start and watch the pipeline, manage jobs, review what it found. */
 export function Home({ goKeys }: { goKeys: () => void }) {
@@ -45,6 +46,7 @@ export function Home({ goKeys }: { goKeys: () => void }) {
         <LatestCompanies tick={tick} onChanged={refresh} />
         <LatestPeople tick={tick} onChanged={refresh} />
       </div>
+      <SheetAppend tick={tick} onChanged={refresh} />
       <Jobs jobs={snap?.jobs ?? []} onChanged={refresh} />
       <RunStep hasCycle={hasCycle} onStarted={refresh} />
     </div>

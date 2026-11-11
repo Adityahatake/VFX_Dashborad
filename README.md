@@ -1,28 +1,31 @@
-# Lead Pipeline Dashboard
+# VFX Lead Ops
 
-A local, single-user Streamlit console for building and running **lead-generation pipelines**. A pipeline is a YAML file (plus optional Python step files) that says what a qualifying company looks like, where to find candidates, who to look for, and which Google Sheet tab the approved rows go to. The first pipeline, `vfx_genai`, finds decision-makers at production companies that use generative AI in client work; it is a port of the scripts in the read-only VFX repo.
+A local, single-user dashboard that finds **VFX, animation and production studios using generative AI in client work**, finds their decision-makers, and adds approved rows to the team's Google Sheet. It follows the VFX SOPs (`pipelines/vfx_genai/sop/`) and the manager's overrides. It is a port of the scripts in the read-only VFX repo, which it never modifies or imports.
 
-Everything here runs on `localhost`. Keys stay in `.env`. Nothing reaches a sheet without your confirmation on the Review page.
+Everything runs on `localhost`: a FastAPI server (Python, the tested core in `core/`) serves a React app. Keys stay in `.env`. Nothing reaches a sheet without your confirmation.
 
-## What it does, in one picture
+## What it does
 
 ```
-harvest (free) -> deep crawl (free) -> REVIEW companies -> find people (free / cheap) -> REVIEW people
-        -> build review CSV -> dry run -> typed confirmation -> safe append to the sheet
-every paid or LLM step stops at a cost screen first; every step runs as a background job you can cancel and resume
+Run pipeline (one click, one confirmed maximum cost):
+  1 initialise  2 check keys + read the sheet (read-only)  3 Tavily search for candidate studios (SOP 01 s5: candidates only)
+  4 crawl each studio's OWN site for AI + client evidence, then the SOP machine checks (pass / hold / reject)
+  5 people search on qualified studios (Apify leads finder) + free pool matching  6 check every new person against the sheet (read-only)
+  7 save to the database  8 done
+Then YOU review companies and people on Home, build the review CSV, dry-run it, type the row count, and append.
 ```
 
 ## Safety rules the code enforces (each has tests)
 
-- **Show before write.** Appending needs approved rows, a built CSV, a dry run and you typing the row count.
-- **Safe append.** All checked tabs are re-read before every batch of 8. It stops if the header changed or the data contains blank rows. It verifies the landing range by reading the rows back, recolours only our own rows (one row at a time), and **never retries a write**. After a write error with an unknown outcome, appending is blocked until a recovery step has read the sheet tail and produced a CSV of only the missing rows.
+- **Show before write.** The append needs approved people, a built CSV, a dry run of exactly that CSV (checked by content hash on the server), and you typing the row count. A person can be approved only when `why_this_person`, the commercial hypothesis, `ai_evidence` and `evidence_source` are written.
+- **Safe append.** All checked tabs are re-read before every batch of 8; it stops on a changed header or blank rows; it reads the rows back, recolours only our own rows one at a time, and **never retries a write**. After an unknown write outcome, appending is blocked until recovery has read the sheet tail and logged what landed.
 - **No delete, edit or reorder** of anyone's rows exists anywhere in the Sheets client.
-- **Sandbox first.** The default sheet target is `SANDBOX_SHEET_ID`. Switching to the real sheet needs you to type `REAL SHEET`. Demo mode never calls Google.
-- **Spend control.** Before any paid run you see the maximum cost, the key (by short id), its live balance and the remaining cycle cap, and you confirm. Caps never exceed the pipeline's hard maximum. Four stop rules (cost per row over $0.50, pass rate under 3%, usable credit under $3, two low-yield cycles) block paid steps until you acknowledge them. An actor never paid for must be piloted at 25 records or fewer first.
-- **Apify runs are never relaunched after a network error.** The run id is saved before waiting; recovery looks the run up by its input; a resumed job re-attaches to its saved run; spend is recorded once per run.
-- **One job per API key**, enforced with a lease.
-- **The LLM only suggests** (optional; see below). Manager rules are applied in code: at most 3 people per company, a title from a database only is Medium confidence, India is always excluded.
-- Keys are shown by short id only, masked in logs, and `.gitignore` is an allowlist. CSVs are UTF-8 without a BOM.
+- **Sheet target.** Sandbox, real read-only, or real with writes (you type `REAL SHEET`). Demo mode never calls Google.
+- **Spend control.** Every paid step, and the whole pipeline run, shows its maximum cost and needs confirmation. Inside a run every paid stage is sized to what is left of that confirmation and of the cycle cap (hard maximum $3). Stop rules (cost per row over $0.50, pass rate under 3%, usable credit under $3, two low-yield cycles) block paid stages until you acknowledge them. A source never paid for here runs at pilot size (25) first.
+- **Apify runs are never relaunched after a network error**; the run id is saved before waiting. **One job per API key** (leases).
+- **AI only suggests.** Drafts are labelled; you still approve. The model can never grant High confidence or choose R2/R4.
+- **Manager overrides:** at most 3 people per company, a database-only title is Medium, India is always excluded. Recruiters, HR, sales and other SOP 02 s8 functions are excluded.
+- Keys are shown by short id only and masked in logs; `.env` is backed up outside the repo before the app changes it. `.gitignore` is an allowlist. CSVs are UTF-8 without a BOM.
 
 ## Setup (Windows)
 
@@ -31,155 +34,80 @@ py -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
 .\.venv\Scripts\python -m pip install -e .
 copy .env.example .env
-```
-
-Fill in `.env` (it is git-ignored; the app never prints full keys):
-
-| Variable | Used for |
-|---|---|
-| `APIFY_TOKEN_POOL` | comma-separated Apify tokens (people search) |
-| `TAVILY_API_KEYS` | comma-separated Tavily keys (balances; the Tavily steps are not all built, see Known gaps) |
-| `GOOGLE_APPLICATION_CREDENTIALS` | path to a service-account JSON with edit access to the sheets |
-| `SANDBOX_SHEET_ID` | the sandbox copy of the sheet: **all development and first runs write here** |
-| `GOOGLE_SHEET_ID` | the real shared sheet (used only after you switch the target and type `REAL SHEET`) |
-| `ANTHROPIC_API_KEY` | optional LLM assist |
-| `LPD_ENV_BACKUP_DIR` | where `.env` backups go when you add keys in the app (must be outside the repo) |
-
-The sandbox sheet must have the same tab names and header row as the pipeline. For `vfx_genai`: tabs `Linkedin`, `X` and `Stage 32`, and `Linkedin` row 1 holds the 17 columns in `pipelines/vfx_genai/pipeline.yaml`.
-
-```
-.\.venv\Scripts\python scripts\import_vfx_history.py --dry-run    # read-only look at the VFX history
-.\.venv\Scripts\python scripts\import_vfx_history.py              # import it (safe to rerun)
-.\.venv\Scripts\python -m streamlit run app/Home.py
-```
-
-The import reads the VFX repo's `data/` folder (read-only) and loads about 22,000 known domains, 2,000 company names, the spend history and 93 pool files, so the harvest steps do not re-propose companies you already crawled.
-
-### The new dashboard (React + FastAPI, redesign in progress)
-
-Build the web app once (needs Node.js 18+), then run one process that serves both the API and the page:
-
-```
 cd web
 npm install
 npm run build
 cd ..
+```
+
+Fill in `.env` (git-ignored), or add the API keys later on **API & Keys**:
+
+| Variable | Used for |
+|---|---|
+| `TAVILY_API_KEYS` | comma-separated Tavily keys (company discovery, 1 credit per search) |
+| `APIFY_TOKEN_POOL` | comma-separated Apify tokens (people search) |
+| `GROQ_API_KEYS` | comma-separated Groq keys (`gsk_...`) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | path to a service-account JSON with access to the sheets |
+| `SANDBOX_SHEET_ID` | the sandbox copy of the sheet (same tabs and header) |
+| `GOOGLE_SHEET_ID` | the real shared sheet |
+| `ANTHROPIC_API_KEY` | optional AI suggestions |
+| `LPD_ENV_BACKUP_DIR` | where `.env` backups go (must be outside the repo) |
+
+```
+.\.venv\Scripts\python scripts\import_vfx_history.py --dry-run    # read-only look at the VFX history
+.\.venv\Scripts\python scripts\import_vfx_history.py              # import it (safe to rerun)
 .\.venv\Scripts\python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open http://localhost:8000. **Home** holds the cycle, Run pipeline (one confirmed maximum cost, live stage-by-stage progress, technical log on demand), jobs, recent runs, and the review of the latest companies and people. For UI development, run `npm run dev` in `web/` (port 5173, API calls proxied to port 8000). `GROQ_API_KEYS` (comma-separated `gsk_...`) joins the `.env` variables above. Until the redesign is finished, the sheet append still runs from the Streamlit app.
+Open http://localhost:8000. For UI work, run `npm run dev` in `web/` (port 5173; API calls go to port 8000).
 
-## Run your first VFX cycle from the dashboard
+## Using it
 
-Do this against the **sandbox** sheet. Nothing is paid or written until steps 7 to 9.
+**Home** (the control centre)
+1. The health strip shows each provider, the sheet target and live status. Fix red items on **API & Keys** first.
+2. **Cycle:** set the goal (rows) and spend cap, start. Acknowledge a stop rule here if one is shown (it is your call).
+3. **Run pipeline:** adjust the size in *Settings* if you like, press *Check cost and readiness*, read the maximum cost and anything blocking it, tick the confirmation, run. Watch the stages, counts, spend and errors live; *Show technical log* opens the raw log. Cancel and Resume (re-checked) are on the run card and in **Jobs**.
+4. **Latest companies:** read the evidence sentence, open the link, approve, mark "needs a look" or reject with a reason. Automatic checks are labelled `AUTO_PASS` / `AUTO_HOLD` / `AUTO_REJECT`; you can change any of them.
+5. **Latest people:** *Edit fields*, write `why_this_person` and the hypothesis yourself, approve or reject. An AI draft, if present, can be copied in with one click and still needs your approval.
+6. **Sheet & append:** take the baseline, build the CSV, dry-run (lists every skipped row and why), type the count, append. If a write ever ends with an unknown outcome, run recovery here.
+7. **Run cycle step (advanced):** run one step on its own (for example a free RevenueBase harvest or a pools-mode crawl), with the same cost gate.
 
-1. **Check the setup.** Home shows no red alerts. In **Settings**, demo mode is off, the paths are right, and `SANDBOX_SHEET_ID` and the credentials show as set.
-2. **Check balances.** On **Keys**, press *Check balances*. You need at least one Apify key at or above $0.80 before any paid step.
-3. **Start a cycle.** On **Run Cycle**, pick `vfx_genai`, set the goal (rows) and the spend cap (default and maximum $3), press *Start cycle*.
-4. **Baseline and snapshot.** On **Review > Sheet and append**, press *Take baseline now*. On Run Cycle run the free step `sheet_snapshot` (it reads the sheet read-only so later steps know who is already on it).
-5. **Find companies for free.** Run `harvest_revenuebase`, then `deep_crawl` (use the same `tag`). Watch **Jobs**: logs stream live, Cancel is graceful, Resume continues from the checkpoint, and closing the browser does not stop anything. A crawl of thousands of sites takes a long time; start with `limit` set to a few dozen.
-6. **Review companies.** On **Review > Companies**, read the matched sentence and open the evidence link. Approve, reject (with a reason code) or mark "needs a look". Optionally run `llm_verdicts` first for suggestions (see the LLM section); you still decide.
-7. **Find people.** Approved companies feed `leads_finder`. Its first run must be a pilot of 25 records or fewer (the imported VFX history already counts as a pilot for this actor). The cost screen shows the maximum cost and the key; confirm to run. Then run `pool_match` (free second and third contacts). `salesnav` is a last resort at about $0.90 per row.
-8. **Review people.** On **Review > People**, edit fields, write `why_this_person` and the commercial-route hypothesis yourself (the app leaves them as drafts and blocks approval until they are written), and approve or reject.
-9. **Append.** On **Sheet and append**: *Build review CSV*, *Dry-run append* (it lists every row that would be skipped and why), type the row count, press *Append to sheet*. Check the result on the sandbox sheet.
-10. **Wrap up.** Export the cycle report (Markdown), end the cycle on Run Cycle, and look at **History** (cost per row, source yield). Repeat on the sandbox until you trust it; only then switch the target to the real sheet.
+**Analytics:** companies and people over time (daily, weekly, monthly, any date range), pipeline runs (success vs failed, average time, records per run), people per qualified company, spend by provider over time, remaining credit, discovery-source yield, exhausted sources and every cycle's cost per row and pass rate. Every number comes from the database.
 
-## Add a new pipeline (worked example)
-
-Goal: "architecture firms that publish AI renders". Most of a pipeline is configuration; Python is only for what configuration cannot express.
-
-**1. Open the wizard.** **Pipelines > New pipeline** (or *Clone* an existing pipeline, which copies its config and SOP files but not its "exhausted sources" notes). Seven pages, with a live YAML preview and validation errors at the bottom of every page, and *Save pipeline* disabled until it is valid:
-
-| Page | What you set |
-|---|---|
-| 1 Basics | name (a lowercase slug; it becomes the folder `pipelines/architecture_ai/`) and title |
-| 2 Company profile | one or two sentences on who qualifies, company types and names to reject, approved and excluded countries |
-| 3 Evidence | `strong_terms` (for example `Midjourney`, `AI-generated`, `KI-generiert*`), `client_cues` (`client`, `for {Brand}`), false-positive regexes, and what does not count. `*` ends a word, `{Brand}` means a capitalised word, and strong terms never match inside a longer word |
-| 4 People | decision titles (best first), reject titles, people per company, role families |
-| 5 Steps | the ordered steps, their stage and parameters (JSON). Only built-in steps and this pipeline's own custom steps are offered |
-| 6 Sheet output | the write tab, its columns in sheet order, tabs checked for duplicates, which columns identify name/company/country/evidence/profile URL, and the **field mapping** |
-| 7 Budget, LLM, SOPs | caps and stop rules, LLM switch, and SOP/rubric markdown files (upload or paste) |
-
-**2. Map your columns.** The people steps fill *internal* fields (`name`, `company`, `title`, `role`, `country`, `ai_evidence`, `why_this_person`, `qa_confidence`, `contact_or_reference`, `evidence_source`, and so on). If your sheet calls them something else, map them on page 6; the mapping is applied only when a row is built for the sheet or read back from it. Example for the architecture sheet:
-
-```yaml
-output:
-  columns: [person, firm, position, role, region, evidence_summary, why_this_person, confidence, profile, source_urls]
-  field_map: {name: person, company: firm, title: position, country: region, ai_evidence: evidence_summary,
-              qa_confidence: confidence, contact_or_reference: profile, evidence_source: source_urls}
-  dedupe: {name_field: person, company_field: firm, url_fields: [profile], evidence_field: source_urls, country_field: region}
-```
-
-**3. Add a custom step when configuration is not enough.** On **Pipelines > Custom steps**, choose the pipeline, an id and a kind, and press *Create step file*. That writes `pipelines/architecture_ai/steps/render_check.py` from a template. Edit `run()`:
-
-```python
-from core.steps.base import Step, StepResult, register
-from pydantic import BaseModel, ConfigDict, Field
-
-class Params(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    text: str = Field("...", max_length=5000)
-
-@register
-class RenderCheck(Step):
-    id = "render_check"
-    kind = "free"                      # free | paid | llm | write
-    title = "Count sentences that mention AI renders"
-    params_model = Params
-
-    def run(self, ctx, params):
-        ctx.check_cancel()             # lets Cancel stop it gracefully
-        ctx.log("working...")
-        (ctx.workdir / "out.txt").write_text("...", encoding="utf-8")
-        return StepResult(counts={"hits": 1}, artifacts=["out.txt"], message="ok")
-```
-
-Press *Reload steps*. A file with a syntax error, a bad import, no `@register`, an invalid `kind`, or an id that is already taken shows an **error card** (file and line) and never stops the app or the other steps. Custom steps appear on Run Cycle for their own pipeline only, and can be added to the pipeline in wizard page 5. Paid, LLM and write kinds still go through the confirmation screen; for a paid step declare `estimate_cost` (price times maximum results), take the key with `ctx.use_key("apify")` and record every cost with `ctx.record_spend(...)`.
-
-**Custom steps are trusted code.** They run as you with the same access. The app cannot sandbox them and cannot know if a step claiming `kind = "free"` spends money somewhere else.
-
-**4. Test it safely.** Turn on **Settings > Demo mode** (fake keys, an in-memory sheet, a scripted fake Apify and a canned LLM, no network) to click through the whole flow, then run a real cycle against the sandbox sheet. Edit or archive a pipeline from the Pipelines list: *Edit* keeps a backup of the old file in `data/backups/`, and *Archive* moves the folder to `pipelines/_archived/` (nothing is deleted). Archive is blocked while the pipeline has an active cycle.
-
-## The pieces, briefly
-
-- **Jobs.** Every step runs as a detached worker process (`core.worker`) started through a short-lived intermediary, so closing the browser, stopping Streamlit or killing its process tree does not stop a job. State is in SQLite. Dead workers are marked `interrupted` and can be resumed from their checkpoint. Cancel is graceful first, then a kill after 15 seconds. On Windows the worker runs the base interpreter directly (venv packages via `PYTHONPATH`) because the venv launcher layer made workers die silently.
-- **Keys and spend.** Balances come from read-only calls (Apify limits are free; a Tavily live search costing one credit is opt-in). The ledger records every paid call; LLM spend is recorded separately against its own cap.
-- **Companies.** `harvest_revenuebase` and `harvest_directory` are free; `deep_crawl` is free, resumable and records per-source yield; `evidence` greps Impressum and team pages.
-- **People.** `leads_finder` (one key, cached results), `salesnav` (async; submit once, fetch each page once, empty polls free), `pool_match` (free second and third contacts with a namesake flag).
-- **LLM assist (optional, off by default).** Active only when `ANTHROPIC_API_KEY` is set, the Settings toggle is on, the pipeline's `llm` block is enabled and the model has a price in Settings. `llm_verdicts` and `llm_person_drafts` store suggestions; a reviewer applies a person draft with a button and it still needs an explicit Approve. Checks in code: a quote must appear verbatim in the text that was sent, a `yes` needs a named client, AI-made work and a quote, the model can never grant High confidence or choose R2/R4, and page text is fenced as untrusted data. Anthropic only (the Groq amendment was not applied).
-- **History.** Cycles, source yield with a hint when a source looks dead, paid and LLM spend, and how often your decisions matched the LLM. Run Cycle warns before you rerun a source listed under `exhausted_sources`.
+**API & Keys:** Groq, Tavily and Apify in one place: status, remaining credit (Apify in dollars, Tavily in credits, Groq in requests left today), usage, low-credit warnings (default below 20), add / replace / remove keys, free checks and opt-in live checks. Settings (demo mode, default cap, AI suggestions and prices, what `.env` contains) are at the bottom.
 
 ## Layout
 
 ```
-app/Home.py, app/pages/1_Pipelines ... 8_Settings     the Streamlit pages
-core/                    config, db, registry, wizard, fields, jobs, worker, keys, spend, gate, sheets, dedupe, append, review, people, metrics, apify, llm/
-core/steps/              built-in steps (harvest, crawl, people_free, paid, llm_steps, sheet_steps, demo) and custom-step discovery
-pipelines/<name>/        pipeline.yaml, sop/*.md, optional steps/*.py     (pipelines/_archived/ is ignored)
-scripts/import_vfx_history.py
-tests/                   pytest (a headless render of every page included)
-data/                    git-ignored runtime state: SQLite, job logs, cycle folders, pools, backups
+api/                     FastAPI: main.py (health, keys, cycle, steps, gate, jobs, pipeline, review, analytics, SSE), sheet.py (append, recovery, settings, sources)
+web/src/                 React app: home/, analytics/, keys/
+core/                    config, db (migrations), registry, fields, jobs, worker, keys, spend, gate, sheets, dedupe, append, review, people, qualify, analytics, metrics, apify, llm/
+core/steps/              discover (Tavily), harvest, crawl, people_free, paid, pipeline_run (the one-click pipeline), llm_steps, sheet_steps, demo
+pipelines/vfx_genai/     pipeline.yaml and the SOPs
+scripts/                 import_vfx_history.py, import_keys.py
+tests/                   pytest: real worker processes against fakes; no network, keys or real sheet
+data/                    git-ignored runtime state: SQLite, job logs, cycle folders, pools
 ```
 
-Run the tests with `.\.venv\Scripts\python -m pytest`. They launch real worker processes against fakes and never touch the network, a key or a real sheet.
+Run the tests with `.\.venv\Scripts\python -m pytest`, and type-check the UI with `npm run build` in `web/`.
 
 ## Known gaps and what has not been verified live
 
-- **Nothing here has called the real Apify, Tavily, Anthropic or Google APIs.** Request shapes follow the VFX scripts, the Claude API reference and the installed SDK; the Sheets client is tested against a fake that reproduces the API's trimming and "append lands after the first blank row" behaviour. The first real runs (a roughly 25-record pilot per actor, and one small append to the sandbox sheet) must confirm: Sales Navigator output field names, Apify's `usageTotalUsd` field, the leads-finder input shape, and real token costs. Prices in Settings are the published list prices at build time.
-- **Not built:** `harvest_tavily_press` (the trade-press search; it is the one step in the VFX pipeline still marked "not built yet" on the Pipelines page, because the VFX script for it was not in the repo), the Tavily-extract fallback in `harvest_directory`, and the "Sync to keys sheet" button (the `KEYS_SHEET_ID` variable is reserved for it).
+- **Verified live:** reading the real sheet (read-only), Apify balance checks, the key import from the keys sheet, the free crawls.
+- **Not yet verified live:** Tavily search (no Tavily key configured yet), Groq (no key; its quota is read from response headers, which is what Groq documents), the leads-finder pilot and Sales Navigator field names, Anthropic costs, and any sheet write (the target has been read-only so far).
+- **Groq** is managed and checked, but the AI suggestion steps still call Anthropic; a Groq suggestion provider is not built yet.
+- **Not built:** the Tavily-extract fallback in `harvest_directory`, and a "sync to keys sheet" button.
 - **Stricter than VFX:** the append also rejects countries that are not on the approved list, not only India.
-- **Server-side refusal fallbacks** recommended by the Claude API reference are not enabled; a refusal becomes an `unsure` suggestion.
-- The pipeline wizard edits one pipeline at a time and does not edit `exhausted_sources`; edit that list in the YAML.
 
 ## Build history
 
 | Phase | Commit |
 |---|---|
-| 1 skeleton: config, SQLite, pages | `c9a4853` |
-| 2 jobs engine | `3896d61` |
-| 3 keys, spend, cost gate | `dc4b737` |
-| 4 free steps, VFX history import, worker fix | `4df9e69` |
-| 5 Review and safe append | `6a45678` |
-| 6 paid people steps | `7f34a10` |
-| 7 LLM assist and History | `2fbc8a6` |
-| 8 pipeline wizard, custom steps, field mapping | see `git log` |
+| 1-8 Streamlit dashboard: jobs, keys, spend gate, free and paid steps, review, safe append, LLM assist | `c9a4853` … `11510b8` |
+| Real-run support: read-only target, key import, pools crawl fix | `9fa1314` |
+| Redesign 1: FastAPI layer | `b06e521` |
+| Redesign 2: Apify, Tavily and Groq key management | `27e36e2` |
+| Redesign 3: one-click pipeline with Tavily discovery | `3be42cf` |
+| Redesign 4: React Home | `e63a173` |
+| Redesign 5: Analytics and API & Keys | `36185be` |
+| Redesign 6: sheet append in the new UI; VFX-only; Streamlit, wizard and custom steps removed | see `git log` |

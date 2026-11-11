@@ -1,9 +1,20 @@
+import type React from "react";
 import { useState } from "react";
 import { api, type Company, type Person } from "../api";
 import { useFetch } from "../hooks";
 import { ago, Alert, Badge, Button, Card, cx, decode, Empty, inputCls, statusTone } from "../ui";
 
 type Reasons = { company: Record<string, string>; person: Record<string, string> };
+/** AI suggestions arrive as light markdown; show them as plain text, clearly labelled, never as a decision. */
+function Suggestion({ text, action }: { text: string; action?: React.ReactNode }) {
+  return (
+    <div className="mt-2 rounded-lg border border-accent-2/30 bg-accent-2/5 p-2 text-xs text-muted">
+      <div className="whitespace-pre-wrap">{text.replace(/\*\*/g, "").replace(/^_(.*)_$/gm, "$1")}</div>
+      {action && <div className="mt-2">{action}</div>}
+    </div>
+  );
+}
+
 const FILTERS: [string, string][] = [["pending,look", "To review"], ["approved", "Approved"], ["rejected", "Rejected"], ["", "All"]];
 
 function Filter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -60,6 +71,7 @@ export function LatestCompanies({ tick, onChanged }: { tick: number; onChanged: 
                   <a href={u} target="_blank" rel="noreferrer" className="text-accent-2 hover:underline">{u}</a>
                 </div>
               ))}
+              {c.suggestion && <Suggestion text={c.suggestion} />}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {c.decision !== "approved" && <Button onClick={() => decide(c.id, "approved")}>Approve</Button>}
                 {c.decision !== "look" && <Button kind="ghost" onClick={() => decide(c.id, "look")}>Needs a look</Button>}
@@ -133,6 +145,12 @@ export function LatestPeople({ tick, onChanged }: { tick: number; onChanged: () 
               </div>
               {p.problems.length > 0 && p.decision !== "rejected" && (
                 <ul className="mt-2 list-inside list-disc text-xs text-warn">{p.problems.map((x) => <li key={x}>{x}</li>)}</ul>
+              )}
+              {p.suggestion && p.decision !== "approved" && (
+                <Suggestion text={p.suggestion} action={<Button onClick={async () => {
+                  setErr(null);
+                  try { await api.post(`/api/people/${p.id}/use-suggestion`); reload(); onChanged(); } catch (e) { setErr((e as Error).message); }
+                }}>Use this suggestion (you still approve)</Button>} />
               )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Button onClick={() => setEdit(edit === p.id ? null : p.id)}>Edit fields</Button>

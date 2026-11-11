@@ -1,6 +1,6 @@
 """Steps that touch the sheet or mark review gates.
   sheet_snapshot  (free)   read-only: writes sheet_snapshot.json for pool_match and adds the sheet's companies to the known set
-  verify_companies / verify_people / build_rows  (free)  manual gates: they only tell you to open the Review page
+  verify_companies / verify_people / build_rows  (free)  manual gates: they only point to the review on Home
   append_sheet    (write)  the safe append of an approved review CSV; runs as a worker job with a log, and is never auto-resumed after a write error"""
 from __future__ import annotations
 
@@ -49,28 +49,28 @@ class _Gate(Step):
 
     def run(self, ctx: StepContext, p: NoParams) -> StepResult:
         ctx.log(f"Manual gate: {self.where} Nothing is written to the sheet from here.")
-        return StepResult(message="open the Review page")
+        return StepResult(message="review on Home")
 
 
 @register
 class VerifyCompanies(_Gate):
     id = "verify_companies"
     title = "Review gate: approve or reject crawl hits"
-    where = "open the Review page > Companies and approve or reject each crawl hit."
+    where = "on Home > Latest companies, approve or reject each crawl hit."
 
 
 @register
 class VerifyPeople(_Gate):
     id = "verify_people"
     title = "Review gate: approve or reject people"
-    where = "open the Review page > People, edit fields, and approve or reject."
+    where = "on Home > Latest people, edit fields, and approve or reject."
 
 
 @register
 class BuildRows(_Gate):
     id = "build_rows"
     title = "Review gate: build the review CSV"
-    where = "open the Review page > Build review CSV, then run the dry-run."
+    where = "on Home > Sheet & append, build the review CSV, then run the dry run."
 
 
 class AppendParams(BaseModel):
@@ -93,11 +93,11 @@ class AppendSheet(Step):
             raise RuntimeError("append_sheet needs a cycle")
         cfg, con = ctx.cfg, ctx.db
         if con.execute("SELECT 1 FROM stop_events WHERE cycle_id=? AND rule='append_recovery' AND acknowledged_at IS NULL", (ctx.cycle_id,)).fetchone():
-            raise RuntimeError("a previous append failed with an unknown outcome: run recovery on the Review page first (never retry a write blindly)")
+            raise RuntimeError("a previous append failed with an unknown outcome: run recovery in Home > Sheet & append first (never retry a write blindly)")
         path = ctx.workdir / p.csv_name
         header, rows = ap.read_review_csv(path)
         if header != cfg.output.columns:
-            raise ValueError("the CSV header does not match the configured columns; rebuild it on the Review page")
+            raise ValueError("the CSV header does not match the configured columns; rebuild it in Home > Sheet & append")
         if len(rows) != p.expected_rows:
             raise ValueError(f"the CSV has {len(rows)} rows but you confirmed {p.expected_rows}; nothing was written")
         ctx.log(f"appending {len(rows)} rows from {p.csv_name} (target: {type(getattr(ctx.sheet, '_inner', ctx.sheet)).__name__})")

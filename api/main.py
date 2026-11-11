@@ -1,6 +1,6 @@
 """FastAPI app for the VFX dashboard. One pipeline only (vfx_genai). Every rule stays in core/:
   - free steps start directly; paid / llm / write steps go through core.gate (cap, key, pilot, stop rules) and need the
-    cost and key the user confirmed, exactly like the Streamlit page;
+    cost and key the user confirmed;
   - responses carry short key ids only (core.keys.key_id), never secrets;
   - nothing here writes to a sheet except by starting the gated append_sheet step.
 Run:  .venv\\Scripts\\python -m uvicorn api.main:app --host 127.0.0.1 --port 8000"""
@@ -20,44 +20,9 @@ from pydantic import BaseModel, Field
 from core import gate, jobs, keys, paths, spend
 from core.config import PipelineConfig, effective_cap
 from core.db import connect, get_setting, open_db
-from core.registry import get_config
 from core.steps import get_step, steps_for
 
-PIPELINE = "vfx_genai"
-HIDDEN_STEPS = {"demo_slow", "demo_paid"}           # test helpers: never offered in the production UI
-
-
-def db() -> Iterator[sqlite3.Connection]:
-    con = connect(any_thread=True)
-    try:
-        yield con
-    finally:
-        con.close()
-
-
-def cfg() -> PipelineConfig:
-    c = get_config(PIPELINE)
-    if c is None:
-        raise HTTPException(500, f"pipelines/{PIPELINE}/pipeline.yaml is missing or invalid")
-    return c
-
-
-def row(r) -> dict | None:
-    return dict(r) if r is not None else None
-
-
-def active_cycle(con) -> sqlite3.Row | None:
-    return con.execute("SELECT * FROM cycles WHERE pipeline=? AND status='active' ORDER BY id DESC LIMIT 1", (PIPELINE,)).fetchone()
-
-
-def job_view(j) -> dict:
-    d = dict(j)
-    d["stuck"] = jobs.is_stuck(j)
-    d["heartbeat_age_s"] = jobs.age_seconds(j["heartbeat_at"]) if j["status"] in jobs.LIVE else None
-    d["params"] = json.loads(d.pop("params_json") or "{}")
-    for k in ("log_path", "checkpoint_path", "pid"):
-        d.pop(k, None)                                   # local paths and pids are not the UI's business
-    return d
+from .deps import HIDDEN_STEPS, PIPELINE, active_cycle, cfg, db, job_view, row  # noqa: F401  (re-exported for tests)
 
 
 def _startup() -> None:
@@ -520,13 +485,16 @@ def _decision_filter(decision: str | None) -> tuple[str, list]:
 
 @app.get("/api/companies")
 def companies(limit: int = Query(20, ge=1, le=500), decision: str | None = None, con=Depends(db)):
+    from core import review
     w, a = _decision_filter(decision)
-    q = "SELECT id, cycle_id, domain, name, country, source, decision, reason_code, decided_at, evidence_json FROM companies" + w
+    q = "SELECT id, cycle_id, domain, name, country, source, decision, reason_code, decided_at, evidence_json, llm_json FROM companies" + w
     out = []
     for r in con.execute(q + " ORDER BY id DESC LIMIT ?", (*a, limit)):
         d = dict(r)
         ev = json.loads(d.pop("evidence_json") or "{}")
         d["score"], d["evidence"] = ev.get("score"), ev.get("ev", [])[:3]
+        llm = json.loads(d.pop("llm_json") or "null")
+        d["suggestion"] = review.llm_company_note(llm) if llm and ("qualifies" in llm or "error" in llm) else None
         out.append(d)
     return out
 
@@ -535,12 +503,14 @@ def companies(limit: int = Query(20, ge=1, le=500), decision: str | None = None,
 def people(limit: int = Query(20, ge=1, le=500), decision: str | None = None, con=Depends(db), c: PipelineConfig = Depends(cfg)):
     from core import review
     w, a = _decision_filter(decision)
-    q = "SELECT id, cycle_id, domain, fields_json, confidence, flags_json, decision, reason_code, decided_at FROM people" + w
+    q = "SELECT id, cycle_id, domain, fields_json, confidence, flags_json, decision, reason_code, decided_at, llm_json FROM people" + w
     out = []
     for r in con.execute(q + " ORDER BY id DESC LIMIT ?", (*a, limit)):
         d = dict(r)
         d["fields"], d["flags"] = json.loads(d.pop("fields_json") or "{}"), json.loads(d.pop("flags_json") or "[]")
         d["problems"] = review.draft_problems(c, d["fields"])
+        llm = json.loads(d.pop("llm_json") or "null")
+        d["suggestion"] = review.llm_person_note(llm) if llm and "why_this_person" in llm else None
         out.append(d)
     return out
 
@@ -594,6 +564,11 @@ async def events(request: Request, interval: float = Query(1.0, ge=0.2, le=10), 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+from .sheet import router as _sheet_router  # noqa: E402
+
+app.include_router(_sheet_router)
+
+
 # ------------------------------------------------------------------ the built React app (web/dist), served by this same process
 DIST = paths.ROOT / "web" / "dist"
 if (DIST / "index.html").exists():
@@ -609,4 +584,4 @@ if (DIST / "index.html").exists():
         f = (DIST / path).resolve()
         if path and f.is_file() and DIST.resolve() in f.parents:
             return FileResponse(f)
-        return FileResponse(DIST / "index.html")
+        return FileResponse(DIST / "index.html", headers={"Cache-Control": "no-cache"})     # a rebuild is picked up on the next load

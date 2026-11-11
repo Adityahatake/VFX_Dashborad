@@ -1,4 +1,4 @@
-"""Step interface, context and registry. Every step (built-in or custom) implements Step and registers with @register."""
+"""Step interface, context and registry. Every step implements Step and registers with @register."""
 from __future__ import annotations
 
 import json
@@ -137,37 +137,21 @@ class Step:
 
 
 _REGISTRY: dict[str, Step] = {}
-_BROKEN: dict[str, str] = {}      # step module -> error text (custom steps; shown as error cards)
-_ORIGIN: dict[str, str] = {}      # step id -> "builtin" or the pipeline whose steps/ folder defines it
-_LOADING: list[str | None] = [None]   # the pipeline whose custom step file is being imported right now
 
 
 def register(cls):
-    """Class decorator. A step id can be defined once: a custom step cannot replace a built-in or another pipeline's step."""
-    origin = _LOADING[0] or "builtin"
+    """Class decorator for the built-in steps. A step id can be defined once."""
     if not isinstance(getattr(cls, "id", None), str) or not cls.id:
         raise ValueError(f"{cls.__name__} has no string `id`")
-    if cls.id in _REGISTRY and _ORIGIN.get(cls.id) != origin:
-        raise ValueError(f"step id '{cls.id}' is already used by {_ORIGIN.get(cls.id)}")
+    if cls.id in _REGISTRY and type(_REGISTRY[cls.id]) is not cls:
+        raise ValueError(f"step id '{cls.id}' is already used")
     _REGISTRY[cls.id] = cls()
-    _ORIGIN[cls.id] = origin
     return cls
 
 
-def origin_of(step_id: str) -> str:
-    return _ORIGIN.get(step_id, "builtin")
-
-
-def steps_for(pipeline: str | None) -> dict[str, Step]:
-    """Built-in steps plus the custom steps defined by this pipeline (other pipelines' custom steps are not offered)."""
-    return {k: v for k, v in _REGISTRY.items() if _ORIGIN.get(k, "builtin") in ("builtin", pipeline)}
-
-
-def unregister_custom() -> None:
-    for k in [k for k, o in _ORIGIN.items() if o != "builtin"]:
-        _REGISTRY.pop(k, None)
-        _ORIGIN.pop(k, None)
-    _BROKEN.clear()
+def steps_for(pipeline: str | None = None) -> dict[str, Step]:
+    """Every step (the dashboard has one pipeline, vfx_genai; the argument is kept for call-site compatibility)."""
+    return dict(_REGISTRY)
 
 
 def get_step(step_id: str) -> Step:
@@ -178,7 +162,3 @@ def get_step(step_id: str) -> Step:
 
 def all_steps() -> dict[str, Step]:
     return dict(_REGISTRY)
-
-
-def broken_steps() -> dict[str, str]:
-    return dict(_BROKEN)

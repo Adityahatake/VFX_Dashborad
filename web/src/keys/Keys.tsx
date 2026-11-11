@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, type KeyRow, type KeysInfo, type Provider } from "../api";
 import { useFetch } from "../hooks";
 import { ago, Alert, Badge, Button, Card, cx, inputCls, Stat, statusTone, usd } from "../ui";
+import { SettingsCard } from "./SettingsCard";
 
 const ABOUT: Record<string, string> = {
   apify: "Finds the decision-makers at qualified studios (people search). Balance is the monthly usage left, in dollars.",
@@ -150,6 +151,7 @@ export function Keys() {
         {data?.demo && <div className="mt-2"><Alert tone="warn">Demo mode is on: fake Apify keys are shown and no network calls are made.</Alert></div>}
       </Card>
       {data && ["groq", "tavily", "apify"].map((id) => data.providers[id] && <ProviderCard key={id} id={id} p={data.providers[id]} onChanged={setData} />)}
+      <SettingsCard />
     </div>
   );
 }

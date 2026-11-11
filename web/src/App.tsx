@@ -3,7 +3,13 @@ import { Home } from "./home/Home";
 import { Keys } from "./keys/Keys";
 import { cx } from "./ui";
 
-const Analytics = lazy(() => import("./analytics/Analytics").then((m) => ({ default: m.Analytics })));     // charts load only when opened
+// Charts load only when opened. If the app was rebuilt while this tab was open, the old chunk is gone: reload once to get the new build.
+const Analytics = lazy(() => import("./analytics/Analytics").then((m) => ({ default: m.Analytics })).catch((e) => {
+  try {
+    if (!sessionStorage.getItem("chunk-reload")) { sessionStorage.setItem("chunk-reload", "1"); window.location.reload(); }
+  } catch { /* storage blocked: fall through to the error */ }
+  throw e;
+}));
 
 type Page = "home" | "analytics" | "keys";
 const PAGES: [Page, string][] = [["home", "Home"], ["analytics", "Analytics"], ["keys", "API & Keys"]];
@@ -15,6 +21,10 @@ function fromHash(): Page {
 
 export default function App() {
   const [page, setPage] = useState<Page>(fromHash);
+  useEffect(() => {
+    const t = setTimeout(() => { try { sessionStorage.removeItem("chunk-reload"); } catch { /* ignore */ } }, 10000);   // a later rebuild may reload again
+    return () => clearTimeout(t);
+  }, []);
   useEffect(() => {
     const f = () => setPage(fromHash());
     window.addEventListener("hashchange", f);

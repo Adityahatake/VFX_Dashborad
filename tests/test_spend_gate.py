@@ -72,7 +72,7 @@ def test_blocked_when_no_key_above_floor_or_stale(env):
     assert not g.ok and "no free key" in g.blockers[-1]
     env.execute("UPDATE key_status SET checked_at='2020-01-01 00:00:00'")
     g = gate.evaluate(env, CFG, c, "demo_paid", {})
-    assert not g.ok and "Check balances" in g.blockers[-1]
+    assert not g.ok and "Check all keys" in g.blockers[-1]
 
 
 def test_warning_when_cost_could_drain_the_key(env):

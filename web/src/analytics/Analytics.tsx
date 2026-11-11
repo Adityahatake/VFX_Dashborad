@@ -167,6 +167,9 @@ export function Analytics() {
             </Card>
           </div>
 
+          <Sources />
+          <Cycles />
+
           <section>
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">API usage and spending</h2>
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
@@ -201,5 +204,66 @@ export function Analytics() {
         </>
       )}
     </div>
+  );
+}
+
+type Src = { yield: { source: string; screened: number; hits: number; verified: number; rows: number; hit_rate: number | null; dead: boolean }[];
+  exhausted: { source: string; note: string; date: string }[] };
+
+/** Which discovery sources produce companies that reach the sheet (all time), and which are known to be mined out. */
+function Sources() {
+  const { data } = useFetch<Src>("/api/sources");
+  if (!data) return null;
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <Card title="Discovery sources (all time)">
+        {data.yield.length === 0 ? <Empty>No crawl results recorded yet.</Empty> : (
+          <div className="max-h-72 overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted"><tr><th className="py-1">Source</th><th className="text-right">Screened</th><th className="text-right">Hits</th><th className="text-right">Approved</th><th className="text-right">On sheet</th><th className="text-right">Hit rate</th></tr></thead>
+              <tbody>{data.yield.map((r) => (
+                <tr key={r.source} className="border-t border-line tabular-nums">
+                  <td className="py-1 font-mono text-xs">{r.source}{r.dead && <span className="ml-2 font-sans text-warn">mined out?</span>}</td>
+                  <td className="text-right">{r.screened}</td><td className="text-right">{r.hits}</td><td className="text-right">{r.verified}</td><td className="text-right">{r.rows}</td>
+                  <td className="text-right">{r.hit_rate == null ? "—" : `${(r.hit_rate * 100).toFixed(1)}%`}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+      <Card title="Exhausted sources">
+        <ul className="space-y-2 text-sm">{data.exhausted.map((x) => <li key={x.source}><b>{x.source}</b> <span className="text-xs text-muted">({x.date})</span><div className="text-xs text-muted">{x.note}</div></li>)}</ul>
+      </Card>
+    </div>
+  );
+}
+
+type CycleRow = { cycle: number; status: string; goal: number; rows: number; high: number; medium: number; spend_usd: number; llm_usd: number;
+  cost_per_row: number | null; pass_rate: number | null; reviewed: number; hours: number | null; started: string };
+
+/** Every cycle: goal against rows added, confidence mix, spend, cost per row and pass rate (the stop-rule numbers). */
+function Cycles() {
+  const { data } = useFetch<CycleRow[]>("/api/cycles");
+  if (!data || data.length === 0) return null;
+  return (
+    <Card title="Cycles">
+      <div className="max-h-72 overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-muted"><tr><th className="py-1">Cycle</th><th>Status</th><th className="text-right">Goal</th><th className="text-right">Rows added</th>
+            <th className="text-right">High / Medium</th><th className="text-right">Spend</th><th className="text-right">Cost / row</th><th className="text-right">Pass rate</th><th className="text-right">Started</th></tr></thead>
+          <tbody>{data.map((c) => (
+            <tr key={c.cycle} className="border-t border-line tabular-nums">
+              <td className="py-1">#{c.cycle}</td><td className="text-xs text-muted">{c.status}</td><td className="text-right">{c.goal}</td><td className="text-right">{c.rows}</td>
+              <td className="text-right">{c.high} / {c.medium}</td><td className="text-right">{usd(c.spend_usd)}</td>
+              <td className={cx("text-right", c.cost_per_row != null && c.cost_per_row > 0.5 && "text-bad")}>{c.cost_per_row == null ? "—" : usd(c.cost_per_row)}</td>
+              <td className={cx("text-right", c.pass_rate != null && c.pass_rate < 0.03 && "text-bad")}>{c.pass_rate == null ? "—" : `${(c.pass_rate * 100).toFixed(1)}%`}</td>
+              <td className="text-right text-xs text-muted">{c.started?.slice(0, 10)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-muted">Red: over the $0.50 cost-per-row or under the 3% pass-rate stop line.</p>
+    </Card>
   );
 }

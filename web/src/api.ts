@@ -89,12 +89,12 @@ export type Step = { id: string; kind: string; title: string; stage: string | nu
 
 export type Company = {
   id: number; cycle_id: number; domain: string; name: string; country: string; source: string; decision: string;
-  reason_code: string | null; decided_at: string | null; score: number | null; evidence: [string, string][];
+  reason_code: string | null; decided_at: string | null; score: number | null; evidence: [string, string][]; suggestion: string | null;
 };
 
 export type Person = {
   id: number; cycle_id: number; domain: string; confidence: string; decision: string; reason_code: string | null;
-  decided_at: string | null; fields: Record<string, string>; flags: string[]; problems: string[];
+  decided_at: string | null; fields: Record<string, string>; flags: string[]; problems: string[]; suggestion: string | null;
 };
 
 export type PipelineRun = {

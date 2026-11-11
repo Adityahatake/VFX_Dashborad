@@ -1,4 +1,4 @@
-"""SQLite state: schema with ordered migrations. WAL mode because Streamlit and detached workers write at the same time."""
+"""SQLite state: schema with ordered migrations. WAL mode because the API server and detached workers write at the same time."""
 from __future__ import annotations
 
 import sqlite3

@@ -1,5 +1,5 @@
 """Jobs engine: every step runs as a detached subprocess (core.worker). State lives in SQLite, so jobs survive closing the
-browser or restarting Streamlit. Provides launch, cancel (flag file, then kill after a grace period), reconcile (dead PIDs ->
+browser or restarting the dashboard server. Provides launch, cancel (flag file, then kill after a grace period), reconcile (dead PIDs ->
 interrupted), resume (continue from checkpoint) and one-job-per-key leases."""
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def worker_python() -> tuple[str, dict]:
 
 
 def launch(con: sqlite3.Connection, job_id: int, resume: bool = False) -> int:
-    """Start core.worker as a detached process (survives the browser and Streamlit). Returns the PID."""
+    """Start core.worker as a detached process (survives the browser and the dashboard server). Returns the PID."""
     jd = job_dir(job_id)
     py, extra_env = worker_python()
     args = [py, "-m", "core.worker", "--job", str(job_id)] + (["--resume"] if resume else [])
@@ -141,8 +141,8 @@ def launch(con: sqlite3.Connection, job_id: int, resume: bool = False) -> int:
     con.execute("UPDATE jobs SET status='queued', pid=NULL, heartbeat_at=?, log_path=?, checkpoint_path=? WHERE id=?",
                 (utcnow(), str(jd / "job.log"), str(jd / "checkpoint.json"), job_id))
     if os.name == "nt":
-        # Windows: a short-lived intermediary starts the worker and exits, so the worker is not a child of Streamlit. Otherwise a tool or
-        # terminal that kills Streamlit's process tree would take the job down with it.
+        # Windows: a short-lived intermediary starts the worker and exits, so the worker is not a child of the dashboard server. Otherwise a tool or
+        # terminal that kills the server's process tree would take the job down with it.
         stub = ("import subprocess,sys;f=0x00000008|0x00000200|0x08000000\n"
                 "a=sys.argv[2:];o=open(sys.argv[1],'ab')\n"
                 "def go(fl): return subprocess.Popen(a,stdin=subprocess.DEVNULL,stdout=o,stderr=o,close_fds=True,creationflags=fl)\n"

@@ -45,14 +45,14 @@ def evaluate(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: int | None,
     if step.kind == "free":
         return g
     if cycle_id is None:
-        g.blockers.append("no active cycle: create one on the Run Cycle page first")
+        g.blockers.append("no active cycle: start one in the Cycle panel on Home first")
         return g
     cyc = con.execute("SELECT * FROM cycles WHERE id=?", (cycle_id,)).fetchone()
     if cyc is None or cyc["status"] != "active":
         g.blockers.append("the cycle is not active")
         return g
     floor = cfg.budget.min_key_balance_usd
-    if step.kind == "write":          # sheet writes have their own confirmation on the Review page; caps and stop rules are about spend
+    if step.kind == "write":          # sheet writes have their own confirmation in Sheet & append; caps and stop rules are about spend
         from . import keys as _keys, sheets as _sheets
         if not _keys.is_demo(con) and _sheets.sheet_target(con) == "real_readonly":
             g.blockers.append("the sheet target is READ-ONLY (Review > Sheet and append): switch it to sandbox or real before appending")
@@ -82,13 +82,13 @@ def evaluate(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: int | None,
                           "check the cost per usable record, then run the full size")
 
     for ev in spend.sync_stop_events(con, cfg, cycle_id):
-        g.blockers.append(f"stop rule '{ev['rule']}': {ev['reason']} (acknowledge it in the Cycle panel on Home, or on the Spend page, to continue)")
+        g.blockers.append(f"stop rule '{ev['rule']}': {ev['reason']} (acknowledge it in the Cycle panel on Home to continue)")
 
     if est.key_required and est.provider:
         k = keymod.pick_key(con, est.provider, floor)
         if k is None:
             fresh = [s for s in keymod.statuses(con, est.provider) if keymod.age_s(s["checked_at"]) <= keymod.STALE_S]
-            g.blockers.append("no usable key with a fresh balance check: press 'Check balances' on the Keys page" if not fresh
+            g.blockers.append("no usable key with a fresh balance check: press 'Check all keys' on API & Keys" if not fresh
                               else f"no free key at or above ${floor:.2f} (all are low, out, dead or in use by another job)")
         else:
             g.key_id, g.key_balance = k.key_id, k.remaining

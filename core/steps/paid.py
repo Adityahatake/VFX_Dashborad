@@ -58,7 +58,7 @@ class LeadsFinder(Step):
             doms = [r[0] for r in ctx.db.execute("SELECT domain FROM companies WHERE cycle_id=? AND decision='approved' ORDER BY id", (ctx.cycle_id,)) if r[0] not in have]
         doms = list(dict.fromkeys(d for d in doms if d))
         if not doms:
-            raise ValueError("no domains: approve companies on the Review page first, or pass 'domains'")
+            raise ValueError("no domains: approve companies on Home (Latest companies) first, or pass 'domains'")
         if len(doms) > MAX_DOMAINS_PER_RUN:
             ctx.log(f"{len(doms)} domains; using the first {MAX_DOMAINS_PER_RUN} (a bigger batch lets large companies swamp the result cap). Run again for the rest")
             doms = doms[:MAX_DOMAINS_PER_RUN]
