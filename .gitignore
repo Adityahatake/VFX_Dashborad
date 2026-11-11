@@ -9,6 +9,7 @@
 !*/
 !app/**/*.py
 !core/**/*.py
+!api/**/*.py
 !scripts/**/*.py
 !tests/**/*.py
 !pipelines/*/pipeline.yaml

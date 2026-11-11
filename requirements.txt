@@ -2,5 +2,8 @@ streamlit
 pydantic>=2
 PyYAML
 cryptography
+fastapi
+uvicorn
+httpx
 pytest
 anthropic   # optional: only needed for live LLM assist
