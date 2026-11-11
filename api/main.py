@@ -503,6 +503,14 @@ def job_progress(job_id: int, con=Depends(db)):
     return read_progress(job_id) or {}
 
 
+# ------------------------------------------------------------------ analytics (stored data only)
+@app.get("/api/analytics")
+def analytics(frm: str | None = Query(None, alias="from", pattern=r"^\d{4}-\d{2}-\d{2}$"), to: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+              bucket: str = Query("day", pattern="^(day|week|month)$"), con=Depends(db)):
+    from core import analytics as an
+    return an.summary(con, frm, to, bucket)
+
+
 # ------------------------------------------------------------------ latest records
 def _decision_filter(decision: str | None) -> tuple[str, list]:
     """'pending' or 'pending,look' -> a WHERE clause."""

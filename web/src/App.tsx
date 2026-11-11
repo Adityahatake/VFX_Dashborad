@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Home } from "./home/Home";
+import { Keys } from "./keys/Keys";
 import { cx } from "./ui";
+
+const Analytics = lazy(() => import("./analytics/Analytics").then((m) => ({ default: m.Analytics })));     // charts load only when opened
 
 type Page = "home" | "analytics" | "keys";
 const PAGES: [Page, string][] = [["home", "Home"], ["analytics", "Analytics"], ["keys", "API & Keys"]];
@@ -40,18 +43,10 @@ export default function App() {
       </header>
       <main className="mx-auto max-w-[1500px] px-4 py-5">
         {page === "home" && <Home goKeys={() => go("keys")} />}
-        {page === "analytics" && <Placeholder title="Analytics" text="Charts of companies, people, runs and API spend arrive in the next step." />}
-        {page === "keys" && <Placeholder title="API & Keys" text="Groq, Tavily and Apify key management arrives in the next step. The backend is ready." />}
+        {page === "analytics" && <Suspense fallback={<div className="text-sm text-muted">Loading charts…</div>}><Analytics /></Suspense>}
+        {page === "keys" && <Keys />}
       </main>
     </div>
   );
 }
 
-function Placeholder({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-line p-10 text-center">
-      <div className="text-lg font-semibold">{title}</div>
-      <div className="mt-1 text-sm text-muted">{text}</div>
-    </div>
-  );
-}

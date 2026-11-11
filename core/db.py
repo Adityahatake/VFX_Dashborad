@@ -83,7 +83,18 @@ MIGRATIONS: list[tuple[int, str]] = [
         stage TEXT, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, finished_at TEXT, budget_usd REAL, spent_usd REAL NOT NULL DEFAULT 0,
         counts_json TEXT NOT NULL DEFAULT '{}', errors_json TEXT NOT NULL DEFAULT '[]');
     """),
+    (7, """
+    ALTER TABLE companies ADD COLUMN created_at TEXT;
+    ALTER TABLE people ADD COLUMN created_at TEXT;
+    UPDATE companies SET created_at = (SELECT started_at FROM cycles WHERE cycles.id = companies.cycle_id) WHERE created_at IS NULL;
+    UPDATE people SET created_at = (SELECT started_at FROM cycles WHERE cycles.id = people.cycle_id) WHERE created_at IS NULL;
+    CREATE TRIGGER companies_created AFTER INSERT ON companies WHEN NEW.created_at IS NULL BEGIN UPDATE companies SET created_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+    CREATE TRIGGER people_created AFTER INSERT ON people WHEN NEW.created_at IS NULL BEGIN UPDATE people SET created_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+    CREATE INDEX idx_companies_created ON companies(created_at);
+    CREATE INDEX idx_people_created ON people(created_at);
+    """),
 ]
+# Migration 7 note: rows that existed before it get their cycle's start time as created_at (the closest known time); newer rows get the real one.
 
 
 def connect(path: Path | None = None, *, any_thread: bool = False) -> sqlite3.Connection:
