@@ -26,6 +26,16 @@ def request_json(url: str, *, key: str | None = None, body: dict | None = None, 
         time.sleep(2 * (i + 1))
 
 
+def request_json_headers(url: str, *, key: str | None = None, body: dict | None = None, timeout: float = 40) -> tuple[object, dict]:
+    """Like request_json, once (no retry), but also returns the response headers (lower-case names)."""
+    headers = {"Content-Type": "application/json", "User-Agent": "vfx-lead-dashboard"}
+    if key:
+        headers["Authorization"] = "Bearer " + key
+    req = urllib.request.Request(url, data=None if body is None else json.dumps(body).encode(), headers=headers, method="GET" if body is None else "POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.load(r), {k.lower(): v for k, v in r.headers.items()}
+
+
 def get_json(url: str, key: str | None = None, timeout: float = 40):
     return request_json(url, key=key, timeout=timeout)
 

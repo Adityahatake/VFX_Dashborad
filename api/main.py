@@ -107,17 +107,99 @@ def _key_rows(con) -> list[dict]:
     return out
 
 
+def _usage(con, kind: str) -> dict:
+    r = con.execute("SELECT COUNT(*) n, COALESCE(SUM(actual_usd),0) usd, COALESCE(SUM(results),0) results, MAX(ts) last FROM spend_ledger WHERE kind=?",
+                    (kind,)).fetchone()
+    r30 = con.execute("SELECT COALESCE(SUM(actual_usd),0) FROM spend_ledger WHERE kind=? AND ts >= datetime('now','-30 days')", (kind,)).fetchone()[0]
+    return {"calls": r["n"], "spent_usd": round(r["usd"], 4), "spent_30d_usd": round(r30, 4), "results": r["results"], "last_used": r["last"]}
+
+
 @app.get("/api/keys")
 def list_keys(con=Depends(db)):
-    demo = keys.is_demo(con)
-    configured = {p: len(keys.load_keys(p, demo)) for p in keys.PROVIDERS}
-    return {"configured": configured, "keys": _key_rows(con), "usable_apify_credit": keys.usable_credit(con)}
+    """Everything the API & Keys section shows, per provider. Key ids only; the secrets never leave .env."""
+    demo, rows, warns = keys.is_demo(con), _key_rows(con), keys.warnings(con)
+    out = {}
+    for p in keys.PROVIDERS:
+        configured = {keys.key_id(k) for k in keys.load_keys(p, demo)}
+        mine = [r for r in rows if r["provider"] == p and r["key_prefix"] in configured]
+        known = [r["remaining"] for r in mine if r["remaining"] is not None]
+        mine += [{"key_prefix": k, "provider": p, "state": "unchecked", "remaining": None, "cap": None, "resets": "", "checked_at": None,
+                  "in_use": False, "age_s": None} for k in sorted(configured - {r["key_prefix"] for r in mine})]
+        out[p] = {"label": keys.LABELS[p], "unit": keys.UNITS[p], "env_var": keys.PROVIDERS[p][1], "prefix": keys.PROVIDERS[p][0],
+                  "configured": len(configured), "usable": sum(r["state"] == "usable" for r in mine), "dead": sum(r["state"] == "dead" for r in mine),
+                  "total_remaining": round(sum(known), 2) if known else None, "keys": mine,
+                  "usage": _usage(con, "llm" if p == "groq" else p), "warnings": [w for w in warns if w["provider"] == p]}
+    return {"providers": out, "low_credit_threshold": keys.low_credit_threshold(con), "usable_apify_credit": keys.usable_credit(con), "demo": demo}
+
+
+class CheckReq(BaseModel):
+    live_tavily: bool = False                            # one real search per key (1 credit each)
+    live_groq: bool = False                              # one 1-token completion per key (counts against the daily quota)
 
 
 @app.post("/api/keys/check")
-def check_keys(con=Depends(db)):
-    keys.check_all(con)                                  # free status endpoints only (no live Tavily search)
+def check_keys(body: CheckReq | None = None, con=Depends(db)):
+    b = body or CheckReq()
+    keys.check_all(con, live_tavily=b.live_tavily, live_groq=b.live_groq)
     return list_keys(con)
+
+
+def _provider(p: str) -> str:
+    if p not in keys.PROVIDERS:
+        raise HTTPException(404, f"unknown provider '{p}'")
+    return p
+
+
+class AddKeys(BaseModel):
+    keys: list[str] = Field(..., min_length=1, max_length=200)
+
+
+@app.post("/api/keys/{provider}")
+def add_keys(provider: str, body: AddKeys, con=Depends(db)):
+    """Add keys to .env (backed up outside the repo first). The response names how many were added, never the keys."""
+    p = _provider(provider)
+    try:
+        n, _ = keys.add_keys(p, body.keys)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    keys.check_all(con)                                  # free checks, so the new keys show a status straight away
+    return {"added": n, **list_keys(con)}
+
+
+class ReplaceKey(BaseModel):
+    key: str = Field(..., min_length=8)
+
+
+@app.put("/api/keys/{provider}/{kid}")
+def replace_key(provider: str, kid: str, body: ReplaceKey, con=Depends(db)):
+    p = _provider(provider)
+    try:
+        keys.replace_key(con, p, kid, body.key)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    keys.check_all(con)
+    return list_keys(con)
+
+
+@app.delete("/api/keys/{provider}/{kid}")
+def remove_key(provider: str, kid: str, con=Depends(db)):
+    p = _provider(provider)
+    try:
+        keys.remove_key(con, p, kid)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return list_keys(con)
+
+
+class Threshold(BaseModel):
+    threshold: float = Field(..., ge=0, le=100000)
+
+
+@app.put("/api/settings/low-credit")
+def set_low_credit(body: Threshold, con=Depends(db)):
+    from core.db import set_setting
+    set_setting(con, "low_credit_threshold", str(body.threshold))
+    return {"low_credit_threshold": body.threshold}
 
 
 # ------------------------------------------------------------------ cycle

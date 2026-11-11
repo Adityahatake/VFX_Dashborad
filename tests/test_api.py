@@ -34,7 +34,7 @@ def test_keys_endpoint_never_returns_a_secret(client):
     r = client.post("/api/keys/check")
     assert r.status_code == 200
     assert "not_a_real_key" not in r.text                                  # the demo keys' full strings
-    ids = {k["key_prefix"] for k in r.json()["keys"]}
+    ids = {k["key_prefix"] for k in r.json()["providers"]["apify"]["keys"]}
     assert "apify_api_AAAA" in ids
 
 
