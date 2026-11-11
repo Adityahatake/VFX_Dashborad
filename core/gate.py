@@ -82,7 +82,7 @@ def evaluate(con: sqlite3.Connection, cfg: PipelineConfig, cycle_id: int | None,
                           "check the cost per usable record, then run the full size")
 
     for ev in spend.sync_stop_events(con, cfg, cycle_id):
-        g.blockers.append(f"stop rule '{ev['rule']}': {ev['reason']} (acknowledge it on the Spend page to continue)")
+        g.blockers.append(f"stop rule '{ev['rule']}': {ev['reason']} (acknowledge it in the Cycle panel on Home, or on the Spend page, to continue)")
 
     if est.key_required and est.provider:
         k = keymod.pick_key(con, est.provider, floor)

@@ -98,11 +98,14 @@ def test_events_stream_sends_a_snapshot(client):
     assert body.startswith("event: snapshot") and '"jobs"' in body
 
 
-def test_pipeline_endpoints(client):
-    from api import main
+def test_pipeline_endpoints(client, monkeypatch):
     st = client.get("/api/pipeline").json()
     assert st["stages"][0] == "Initializing pipeline" and st["live_job"] is None and st["defaults"]["tavily_queries"] == 20
     client.post("/api/cycle", json={"goal_rows": 10, "cap_usd": 3})
+    g = client.post("/api/steps/vfx_pipeline/gate", json={"params": {}}).json()
+    assert not g["ok"] and any("no Tavily key" in b for b in g["blockers"])                               # discovery needs Tavily
+    set_setting(client.con, "demo_mode", "0")
+    monkeypatch.setenv("TAVILY_API_KEYS", "tvly-" + "dev-abcdef1234567890")
     g = client.post("/api/steps/vfx_pipeline/gate", json={"params": {}}).json()
     assert g["kind"] == "paid" and g["estimate"]["max_usd"] == pytest.approx(20 * 0.008 + 50 * 0.003) and g["ok"]
     assert client.post("/api/pipeline/run", json={"params": {}, "confirmed_max_usd": 0.01}).status_code == 409     # not what the gate showed
@@ -113,3 +116,44 @@ def test_pipeline_endpoints(client):
     client.con.execute("INSERT INTO pipeline_runs (job_id, cycle_id, counts_json) VALUES (?, 1, ?)", (jid, json.dumps({"companies_found": 4})))
     assert client.get("/api/pipeline/runs").json()[0]["counts"]["companies_found"] == 4
     assert client.get(f"/api/jobs/{jid}/progress").json() == {}
+
+
+def test_review_endpoints_keep_the_draft_rule(client):
+    from api import main
+    con = client.con
+    cid = spend.create_cycle(con, main.cfg(), 5, 1.0)
+    co = con.execute("INSERT INTO companies (cycle_id, domain, name) VALUES (?,?,?)", (cid, "s.com", "S")).lastrowid
+    pid = con.execute("INSERT INTO people (cycle_id, domain, fields_json) VALUES (?,?,?)", (cid, "s.com", json.dumps({"name": "A", "why_this_person": "x EDIT: y"}))).lastrowid
+    assert client.post(f"/api/companies/{co}/decision", json={"decision": "rejected"}).status_code == 422      # a rejection needs a reason
+    reasons = client.get("/api/review/reasons").json()
+    assert client.post(f"/api/companies/{co}/decision", json={"decision": "rejected", "reason": next(iter(reasons["company"]))}).status_code == 200
+    p = client.get("/api/people?decision=pending,look").json()[0]
+    assert p["problems"] and "why_this_person" in p["problems"][0]
+    r = client.post(f"/api/people/{pid}/decision", json={"decision": "approved"})
+    assert r.status_code == 422 and "problems" in r.json()["detail"]                                        # incomplete rows cannot be approved
+    assert client.put(f"/api/people/{pid}/fields", json={"fields": {"bogus": "1"}}).status_code == 422
+    full = {"name": "A", "why_this_person": "Owns the studio's AI production decisions.", "evidence_source": "https://s.com/work",
+            "primary_commercial_problem": "Scaling AI spots for clients.", "ai_evidence": "Runway spot for Nike."}
+    assert client.put(f"/api/people/{pid}/fields", json={"fields": full}).json()["problems"] == []
+    assert client.post(f"/api/people/{pid}/decision", json={"decision": "approved"}).status_code == 200
+
+
+def test_stop_event_acknowledge(client):
+    from api import main
+    con = client.con
+    cid = spend.create_cycle(con, main.cfg(), 5, 1.0)
+    ev = con.execute("INSERT INTO stop_events (cycle_id, rule, reason) VALUES (?, 'low_yield', 'x')", (cid,)).lastrowid
+    rec = con.execute("INSERT INTO stop_events (cycle_id, rule, reason) VALUES (?, 'append_recovery', 'x')", (cid,)).lastrowid
+    assert client.post(f"/api/stop-events/{ev}/ack").status_code == 200
+    assert client.post(f"/api/stop-events/{rec}/ack").status_code == 409                                    # only recovery clears this one
+
+
+def test_request_connections_may_cross_threads(tmp_path):
+    """FastAPI opens the per-request connection in one worker thread and may use it in another (seen live as HTTP 500s)."""
+    import threading
+    from core.db import connect
+    con, err = connect(tmp_path / "x.sqlite", any_thread=True), []
+    t = threading.Thread(target=lambda: err.append(con.execute("SELECT 1").fetchone()[0]))
+    t.start()
+    t.join()
+    assert err == [1]

@@ -28,7 +28,7 @@ HIDDEN_STEPS = {"demo_slow", "demo_paid"}           # test helpers: never offere
 
 
 def db() -> Iterator[sqlite3.Connection]:
-    con = connect()
+    con = connect(any_thread=True)
     try:
         yield con
     finally:
@@ -277,6 +277,8 @@ def evaluate_gate(step_id: str, body: GateReq, con=Depends(db), c: PipelineConfi
     except Exception as e:                               # bad params: pydantic message back to the form
         raise HTTPException(422, f"parameters are not valid: {e}")
     from core import metrics
+    if step_id == PIPELINE_STEP and not keys.load_keys("tavily", keys.is_demo(con)):
+        g.blockers.append("no Tavily key is configured: add one on API & Keys (company discovery needs it)")
     v = _gate_view(g)
     v["exhausted"] = [dataclasses.asdict(x) if dataclasses.is_dataclass(x) else x.model_dump() for x in metrics.matching_exhausted(c, step_id, body.params)]
     return v
@@ -374,6 +376,85 @@ def resume_gate(job_id: int, con=Depends(db), c: PipelineConfig = Depends(cfg)):
     return _gate_view(gate.evaluate(con, c, j["cycle_id"], j["step_id"], json.loads(j["params_json"] or "{}")))
 
 
+# ------------------------------------------------------------------ stop rules and review decisions
+@app.post("/api/stop-events/{event_id}/ack")
+def ack_stop(event_id: int, con=Depends(db)):
+    try:
+        spend.acknowledge(con, event_id)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return {"acknowledged": event_id}
+
+
+@app.get("/api/review/reasons")
+def review_reasons():
+    from core import review
+    return {"company": review.REJECT_REASONS, "person": review.PERSON_REASONS}
+
+
+class Decision(BaseModel):
+    decision: str
+    reason: str | None = None
+
+
+@app.post("/api/companies/{company_id}/decision")
+def decide_company(company_id: int, body: Decision, con=Depends(db)):
+    from core import review
+    if con.execute("SELECT 1 FROM companies WHERE id=?", (company_id,)).fetchone() is None:
+        raise HTTPException(404, "no such company")
+    try:
+        review.decide_company(con, company_id, body.decision, body.reason)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"id": company_id, "decision": body.decision}
+
+
+def _person(con, person_id: int):
+    r = con.execute("SELECT * FROM people WHERE id=?", (person_id,)).fetchone()
+    if r is None:
+        raise HTTPException(404, "no such person")
+    return r
+
+
+@app.post("/api/people/{person_id}/decision")
+def decide_person(person_id: int, body: Decision, con=Depends(db), c: PipelineConfig = Depends(cfg)):
+    """Approve only a complete row: the same draft checks as the Review page (why_this_person written by a human, evidence present...)."""
+    from core import review
+    r = _person(con, person_id)
+    if body.decision == "approved":
+        problems = review.draft_problems(c, json.loads(r["fields_json"]))
+        if problems:
+            raise HTTPException(422, {"problems": problems})
+    try:
+        review.decide_person(con, person_id, body.decision, body.reason)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"id": person_id, "decision": body.decision}
+
+
+class PersonFields(BaseModel):
+    fields: dict
+
+
+@app.put("/api/people/{person_id}/fields")
+def edit_person(person_id: int, body: PersonFields, con=Depends(db), c: PipelineConfig = Depends(cfg)):
+    from core import fields as F, review
+    _person(con, person_id)
+    allowed = set(F.internal_columns(c))
+    unknown = sorted(set(body.fields) - allowed)
+    if unknown:
+        raise HTTPException(422, f"unknown fields: {unknown}")
+    review.update_person_fields(con, person_id, {k: str(v) for k, v in body.fields.items()})
+    f = json.loads(_person(con, person_id)["fields_json"])
+    return {"id": person_id, "decision": "pending", "problems": review.draft_problems(c, f)}
+
+
+@app.get("/api/people/columns")
+def person_columns(c: PipelineConfig = Depends(cfg)):
+    from core import fields as F
+    return F.internal_columns(c)
+
+
 # ------------------------------------------------------------------ the one-click pipeline
 PIPELINE_STEP = "vfx_pipeline"
 
@@ -423,11 +504,16 @@ def job_progress(job_id: int, con=Depends(db)):
 
 
 # ------------------------------------------------------------------ latest records
+def _decision_filter(decision: str | None) -> tuple[str, list]:
+    """'pending' or 'pending,look' -> a WHERE clause."""
+    ds = [d for d in (decision or "").split(",") if d]
+    return (" WHERE decision IN (%s)" % ",".join("?" * len(ds)), ds) if ds else ("", [])
+
+
 @app.get("/api/companies")
 def companies(limit: int = Query(20, ge=1, le=500), decision: str | None = None, con=Depends(db)):
-    q, a = "SELECT id, cycle_id, domain, name, country, source, decision, reason_code, decided_at, evidence_json FROM companies", []
-    if decision:
-        q, a = q + " WHERE decision=?", [decision]
+    w, a = _decision_filter(decision)
+    q = "SELECT id, cycle_id, domain, name, country, source, decision, reason_code, decided_at, evidence_json FROM companies" + w
     out = []
     for r in con.execute(q + " ORDER BY id DESC LIMIT ?", (*a, limit)):
         d = dict(r)
@@ -438,14 +524,15 @@ def companies(limit: int = Query(20, ge=1, le=500), decision: str | None = None,
 
 
 @app.get("/api/people")
-def people(limit: int = Query(20, ge=1, le=500), decision: str | None = None, con=Depends(db)):
-    q, a = "SELECT id, cycle_id, domain, fields_json, confidence, flags_json, decision, reason_code, decided_at FROM people", []
-    if decision:
-        q, a = q + " WHERE decision=?", [decision]
+def people(limit: int = Query(20, ge=1, le=500), decision: str | None = None, con=Depends(db), c: PipelineConfig = Depends(cfg)):
+    from core import review
+    w, a = _decision_filter(decision)
+    q = "SELECT id, cycle_id, domain, fields_json, confidence, flags_json, decision, reason_code, decided_at FROM people" + w
     out = []
     for r in con.execute(q + " ORDER BY id DESC LIMIT ?", (*a, limit)):
         d = dict(r)
         d["fields"], d["flags"] = json.loads(d.pop("fields_json") or "{}"), json.loads(d.pop("flags_json") or "[]")
+        d["problems"] = review.draft_problems(c, d["fields"])
         out.append(d)
     return out
 
@@ -497,3 +584,21 @@ async def events(request: Request, interval: float = Query(1.0, ge=0.2, le=10), 
             idle += interval
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ------------------------------------------------------------------ the built React app (web/dist), served by this same process
+DIST = paths.ROOT / "web" / "dist"
+if (DIST / "index.html").exists():
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def spa(path: str):
+        if path.startswith("api/"):
+            raise HTTPException(404, "unknown API path")
+        f = (DIST / path).resolve()
+        if path and f.is_file() and DIST.resolve() in f.parents:
+            return FileResponse(f)
+        return FileResponse(DIST / "index.html")

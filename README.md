@@ -55,6 +55,20 @@ The sandbox sheet must have the same tab names and header row as the pipeline. F
 
 The import reads the VFX repo's `data/` folder (read-only) and loads about 22,000 known domains, 2,000 company names, the spend history and 93 pool files, so the harvest steps do not re-propose companies you already crawled.
 
+### The new dashboard (React + FastAPI, redesign in progress)
+
+Build the web app once (needs Node.js 18+), then run one process that serves both the API and the page:
+
+```
+cd web
+npm install
+npm run build
+cd ..
+.\.venv\Scripts\python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
+```
+
+Open http://localhost:8000. **Home** holds the cycle, Run pipeline (one confirmed maximum cost, live stage-by-stage progress, technical log on demand), jobs, recent runs, and the review of the latest companies and people. For UI development, run `npm run dev` in `web/` (port 5173, API calls proxied to port 8000). `GROQ_API_KEYS` (comma-separated `gsk_...`) joins the `.env` variables above. Until the redesign is finished, the sheet append still runs from the Streamlit app.
+
 ## Run your first VFX cycle from the dashboard
 
 Do this against the **sandbox** sheet. Nothing is paid or written until steps 7 to 9.

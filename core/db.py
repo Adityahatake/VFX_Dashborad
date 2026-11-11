@@ -86,10 +86,12 @@ MIGRATIONS: list[tuple[int, str]] = [
 ]
 
 
-def connect(path: Path | None = None) -> sqlite3.Connection:
+def connect(path: Path | None = None, *, any_thread: bool = False) -> sqlite3.Connection:
+    """`any_thread`: the API opens a connection per request in one worker thread and may use it in another (FastAPI runs sync
+    dependencies and endpoints separately). The connection is still used by one request at a time, never shared."""
     path = Path(path or paths.DB_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(path, timeout=30, isolation_level=None)   # autocommit; use `tx()` for transactions
+    con = sqlite3.connect(path, timeout=30, isolation_level=None, check_same_thread=not any_thread)   # autocommit; use `tx()` for transactions
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA foreign_keys=ON")

@@ -10,12 +10,22 @@
 !app/**/*.py
 !core/**/*.py
 !api/**/*.py
+!web/package.json
+!web/package-lock.json
+!web/index.html
+!web/vite.config.ts
+!web/tsconfig.json
+!web/src/**/*.ts
+!web/src/**/*.tsx
+!web/src/**/*.css
 !scripts/**/*.py
 !tests/**/*.py
 !pipelines/*/pipeline.yaml
 !pipelines/*/sop/**/*.md
 !pipelines/*/steps/*.py
 # Never, even if matched above
+node_modules/
+web/dist/
 .env
 .venv/
 data/
