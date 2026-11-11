@@ -96,3 +96,20 @@ def test_events_stream_sends_a_snapshot(client):
     with client.stream("GET", "/api/events?once=1") as r:
         body = "".join(r.iter_text())
     assert body.startswith("event: snapshot") and '"jobs"' in body
+
+
+def test_pipeline_endpoints(client):
+    from api import main
+    st = client.get("/api/pipeline").json()
+    assert st["stages"][0] == "Initializing pipeline" and st["live_job"] is None and st["defaults"]["tavily_queries"] == 20
+    client.post("/api/cycle", json={"goal_rows": 10, "cap_usd": 3})
+    g = client.post("/api/steps/vfx_pipeline/gate", json={"params": {}}).json()
+    assert g["kind"] == "paid" and g["estimate"]["max_usd"] == pytest.approx(20 * 0.008 + 50 * 0.003) and g["ok"]
+    assert client.post("/api/pipeline/run", json={"params": {}, "confirmed_max_usd": 0.01}).status_code == 409     # not what the gate showed
+    r = client.post("/api/pipeline/run", json={"params": {}, "confirmed_max_usd": g["estimate"]["max_usd"]})
+    assert r.status_code == 200
+    jid = client.con.execute("INSERT INTO jobs (step_id, status) VALUES ('vfx_pipeline','running')").lastrowid
+    assert client.post("/api/pipeline/run", json={"params": {}, "confirmed_max_usd": 0.31}).status_code == 409    # one run at a time
+    client.con.execute("INSERT INTO pipeline_runs (job_id, cycle_id, counts_json) VALUES (?, 1, ?)", (jid, json.dumps({"companies_found": 4})))
+    assert client.get("/api/pipeline/runs").json()[0]["counts"]["companies_found"] == 4
+    assert client.get(f"/api/jobs/{jid}/progress").json() == {}

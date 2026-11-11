@@ -374,6 +374,54 @@ def resume_gate(job_id: int, con=Depends(db), c: PipelineConfig = Depends(cfg)):
     return _gate_view(gate.evaluate(con, c, j["cycle_id"], j["step_id"], json.loads(j["params_json"] or "{}")))
 
 
+# ------------------------------------------------------------------ the one-click pipeline
+PIPELINE_STEP = "vfx_pipeline"
+
+
+def _live_pipeline_job(con):
+    return con.execute("SELECT * FROM jobs WHERE step_id=? AND status IN ('queued','running') ORDER BY id DESC LIMIT 1", (PIPELINE_STEP,)).fetchone()
+
+
+@app.get("/api/pipeline")
+def pipeline_state(con=Depends(db)):
+    from core.steps.pipeline_run import STAGES, RunParams, read_progress
+    jobs.reconcile(con)
+    live = _live_pipeline_job(con)
+    last = con.execute("SELECT * FROM jobs WHERE step_id=? ORDER BY id DESC LIMIT 1", (PIPELINE_STEP,)).fetchone()
+    return {"stages": STAGES, "defaults": RunParams().model_dump(), "live_job": job_view(live) if live else None,
+            "last_job": job_view(last) if last else None, "progress": read_progress(last["id"]) if last else None}
+
+
+class RunReq(BaseModel):
+    params: dict = {}
+    confirmed_max_usd: float
+
+
+@app.post("/api/pipeline/run")
+def run_pipeline(body: RunReq, con=Depends(db), c: PipelineConfig = Depends(cfg)):
+    """Start the full pipeline. The user confirmed the run's maximum cost on the gate (POST /api/steps/vfx_pipeline/gate)."""
+    if _live_pipeline_job(con) is not None:
+        raise HTTPException(409, "a pipeline run is already in progress")
+    return start(StartJob(step_id=PIPELINE_STEP, params=body.params, confirmed_max_usd=body.confirmed_max_usd), con, c)
+
+
+@app.get("/api/pipeline/runs")
+def pipeline_runs(limit: int = Query(20, ge=1, le=200), con=Depends(db)):
+    out = []
+    for r in con.execute("SELECT r.*, j.status AS job_status, j.error FROM pipeline_runs r JOIN jobs j ON j.id=r.job_id ORDER BY r.job_id DESC LIMIT ?", (limit,)):
+        d = dict(r)
+        d["counts"], d["errors"] = json.loads(d.pop("counts_json") or "{}"), json.loads(d.pop("errors_json") or "[]")
+        out.append(d)
+    return out
+
+
+@app.get("/api/jobs/{job_id}/progress")
+def job_progress(job_id: int, con=Depends(db)):
+    from core.steps.pipeline_run import read_progress
+    _job(con, job_id)
+    return read_progress(job_id) or {}
+
+
 # ------------------------------------------------------------------ latest records
 @app.get("/api/companies")
 def companies(limit: int = Query(20, ge=1, le=500), decision: str | None = None, con=Depends(db)):
@@ -413,7 +461,10 @@ def snapshot(con) -> dict:
             v["last_line"] = tail.splitlines()[-1] if tail else ""
         jl.append(v)
     cyc = active_cycle(con)
-    return {"jobs": jl, "cycle": ({"id": cyc["id"], "spent_usd": spend.cycle_spend(con, cyc["id"]), "cap_usd": cyc["cap_usd"]} if cyc else None)}
+    from core.steps.pipeline_run import read_progress
+    pj = con.execute("SELECT id FROM jobs WHERE step_id=? ORDER BY id DESC LIMIT 1", (PIPELINE_STEP,)).fetchone()
+    return {"jobs": jl, "cycle": ({"id": cyc["id"], "spent_usd": spend.cycle_spend(con, cyc["id"]), "cap_usd": cyc["cap_usd"]} if cyc else None),
+            "pipeline": {"job_id": pj["id"], "progress": read_progress(pj["id"])} if pj else None}
 
 
 @app.get("/api/events")

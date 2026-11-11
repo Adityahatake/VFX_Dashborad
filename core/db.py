@@ -77,6 +77,12 @@ MIGRATIONS: list[tuple[int, str]] = [
         screened INTEGER NOT NULL DEFAULT 0, hits INTEGER NOT NULL DEFAULT 0, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE INDEX idx_yield_cycle ON source_yield(cycle_id);
     """),
+    (6, """
+    CREATE TABLE pipeline_runs (
+        job_id INTEGER PRIMARY KEY REFERENCES jobs(id), cycle_id INTEGER REFERENCES cycles(id), status TEXT NOT NULL DEFAULT 'running',
+        stage TEXT, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, finished_at TEXT, budget_usd REAL, spent_usd REAL NOT NULL DEFAULT 0,
+        counts_json TEXT NOT NULL DEFAULT '{}', errors_json TEXT NOT NULL DEFAULT '[]');
+    """),
 ]
 
 
